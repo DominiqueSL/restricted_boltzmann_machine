@@ -3,24 +3,23 @@ import numpy as np
 
 
 class RBM:
-    def __init__(self, training_data, num_visible, num_hidden, depth=1):
+    def __init__(self, training_data, num_visible, num_hidden):
         """
         Constructor of the restricted Boltzmann machine
         Takes care of the initialization of many variables
         :param training_data: Matrix containing all the data required for training of the network
         :param num_visible: Integer corresponding to the number of visible units in the network
         :param num_hidden: Integer corresponding to the number of hidden units in the network
-        :param is_sample_cols: Boolean set to true if the samples are on the columns (thus the features on the rows). Initialized to True
         :param depth: Integer corresponding to the number of layers the network is deep
         """
         self.num_visible = num_visible
         self.hidden_nodes = np.ones(num_hidden)
-        self.depth_network = depth
         self.weights = np.random.normal(0.0, 0.01, (num_visible, num_hidden))
         self.bias_hid = np.zeros(num_hidden)
         self.bias_vis = self._bias_visible_init(training_data)
         self.vis_nodes_recon = np.zeros(num_visible)
         self.p_h_data = np.zeros(num_hidden)
+        self.hid_nodes_recon = np.zeros(num_hidden)
 
     @staticmethod
     def _bias_visible_init(visible_units):
@@ -32,17 +31,6 @@ class RBM:
         proportion = np.divide(np.sum(visible_units, 0), visible_units.shape[0])
         denominator = np.subtract(np.ones(proportion.shape), proportion)
         return np.log(np.divide(proportion, denominator))
-
-    def _energy(self, visible_nodes, hidden_nodes):
-        return -np.dot(np.transpose(hidden_nodes), self.bias_hid) - np.dot(np.tranpose(hidden_nodes), self.weights, visible_nodes) - np.dot(np.transpose(self.bias_vis), visible_nodes)
-
-    def _partition_function(self, energy):
-        """
-
-        :param energy:
-        :return:
-        """
-        return np.exp(-energy)
 
     def _probability_hidden(self, visible_nodes):
         """
@@ -71,19 +59,18 @@ class RBM:
         :return: Vector with the hidden node activation
         """
         # Positive gradient: Visible => Hidden
-        self.p_h_data = self._probability_hidden(vis_nodes)  # Possibly change this to 1 sample only!
+        self.p_h_data = self._probability_hidden(vis_nodes)
 
         # Sample from this probability distribution
         sample_nodes = np.vectorize(self._sample_node)
-        hid_nodes_recon = sample_nodes(self.p_h_data)
+        self.hid_nodes_recon = sample_nodes(self.p_h_data)
 
         # Data outer product
-        return np.outer(vis_nodes, hid_nodes_recon), hid_nodes_recon
+        return np.outer(vis_nodes, self.hid_nodes_recon), self.hid_nodes_recon
 
-    def _neg_gradient(self, hid_nodes, k=2):
+    def _neg_gradient(self, k=2):
         """
         Compute the outer product between hidden and visible nodes, which are obtained from reconstructions.
-        :param hid_nodes: Vector with the activations of hidden nodes
         :param k: Integer corresponding to the number of Gibbs sampling steps
         :return: Vector with on each index the outer product between hidden and visible nodes
         :return: Vector with all the visible node activations
@@ -92,18 +79,18 @@ class RBM:
         # Vectorize function for easy sampling
         sample_nodes = np.vectorize(self._sample_node)
         # Initialize the hidden nodes activation
-        hid_nodes_act = hid_nodes
+        # hid_nodes_act = hid_nodes
         # Perform Gibbs sampling
         for step in range(k):
             # Negative gradient: Hidden => Visible (reconstruction of data)
-            p_v = self._probability_visible(hid_nodes_act)
+            p_v = self._probability_visible(self.hid_nodes_recon)
             # Sample
-            vis_nodes_recon = sample_nodes(p_v)
+            self.vis_nodes_recon = sample_nodes(p_v)
             # Reconstruct the hidden nodes from visible again
-            p_h = self._probability_hidden(vis_nodes_recon)
+            p_h = self._probability_hidden(self.vis_nodes_recon)
             # Sample from this probability distribution
-            hid_nodes_act = sample_nodes(p_h)
-        return np.outer(vis_nodes_recon, hid_nodes_act), vis_nodes_recon, hid_nodes_act
+            self.hid_nodes_recon = sample_nodes(p_h)
+        return np.outer(self.vis_nodes_recon, self.hid_nodes_recon)
 
     def _update_model_params(self, vis_nodes, lr=0.01, k=1):
         """
@@ -120,17 +107,19 @@ class RBM:
 
         # Iterate k number of times
         for i in range(k):
-            neg_grad, self.vis_nodes_recon, hid_nodes_recon = self._neg_gradient(hid_node_recon_data)
+            neg_grad = self._neg_gradient()
 
         # Update
         self.weights += lr * (pos_grad - neg_grad)
-        self.bias_hid += lr * (hid_node_recon_data - hid_nodes_recon)
-        self.bias_vis += lr * (vis_nodes - self.vis_nodes_recon)
+        self.bias_hid += lr * (hid_node_recon_data - self.hid_nodes_recon)
 
-        # print("Empirical visible unit probability: " )
-        # print(self._probability_visible(self.p_h_data))
-        # print("Reconstructed visible unit probability: ")
-        # print(self._probability_visible(hid_nodes_recon))
+    def empirical_probability(self, training_data):
+        """
+        Compute the empirical probability of the visible nodes
+        :param training_data: Matrix containing the input data with the samples on the rows and features on columns
+        :return: Vector containing the empirical probability of the visible nodes
+        """
+        return np.divide(np.sum(training_data, 0), training_data.shape[0])
 
     @staticmethod
     def _sample_node(prob):
@@ -153,21 +142,24 @@ class RBM:
         error_square = float("inf")
 
         while epoch <= max_epochs and error_square > error_threshold:
-            for training_sample in range(input_data.shape[0]):
-                # Do contrastive divergence algorithm
-                self._update_model_params(input_data[training_sample, :], lr=lr)
-                # Compute error
-                error_square = hf.squared_recon_error(input_data[training_sample, :], self.vis_nodes_recon)
-                error_cross = hf.cross_entropy_error(input_data[training_sample, :], self.vis_nodes_recon)
-                # print("Squared error: %.3f" % error_square + "\n")
-                print("Cross entropy error: %.3f" % error_cross + "\n")
-                print("Epoch: " + str(epoch) + "\n")
+            # First compute the empirical distribution of the visible nodes
+            p_v = self.empirical_probability(input_data)
+            # Vectorize function for easy sampling
+            sample_nodes = np.vectorize(self._sample_node)
+            v = sample_nodes(p_v)
+            # Do contrastive divergence algorithm
+            self._update_model_params(v, lr=lr)
+            # Compute error
+            error_square = hf.squared_recon_error(v, self.vis_nodes_recon)
+            # error_cross = hf.cross_entropy_error(v, self.vis_nodes_recon)
+            # print("Squared error: %.3f" % error_square + "\n")
+            # # print("Cross entropy error: %.3f" % error_cross + "\n")
+            # print("Epoch: " + str(epoch) + "\n")
             epoch += 1
 
-        # for training_sample in range(input_data.shape[0]):
-        #     print("Reconstructed distribution: " + str(training_sample))
-        p_h = self._probability_hidden(input_data[training_sample, :])
-        #     print(p_h)
+        p_v = self._probability_visible(self.hid_nodes_recon)
+        p_h = self._probability_hidden(self.vis_nodes_recon)
+        print(p_v)
         print(p_h)
 
     def make_prediction(self):

@@ -1,5 +1,5 @@
-import help_functions as hf
 import numpy as np
+import help_functions as hf
 
 
 class RBM:
@@ -10,16 +10,27 @@ class RBM:
         :param training_data: Matrix containing all the data required for training of the network
         :param num_visible: Integer corresponding to the number of visible units in the network
         :param num_hidden: Integer corresponding to the number of hidden units in the network
-        :param depth: Integer corresponding to the number of layers the network is deep
         """
         self.num_visible = num_visible
         self.hidden_nodes = np.ones(num_hidden)
         self.weights = np.random.normal(0.0, 0.01, (num_visible, num_hidden))
         self.bias_hid = np.zeros(num_hidden)
         self.bias_vis = self._bias_visible_init(training_data)
-        self.vis_nodes_recon = np.zeros(num_visible)
+        self.vis_nodes_recon = np.zeros(training_data.shape)
         self.p_h_data = np.zeros(num_hidden)
         self.hid_nodes_recon = np.zeros(num_hidden)
+
+    def _energy(self, visible_nodes, hidden_nodes):
+        return -np.dot(np.transpose(hidden_nodes), self.bias_hid) - np.dot(np.tranpose(hidden_nodes), self.weights,
+                                                                           visible_nodes) - np.dot(
+            np.transpose(self.bias_vis), visible_nodes)
+
+    def _partition_function(self, energy):
+        """
+        :param energy:
+        :return:
+        """
+        return np.exp(-energy)
 
     @staticmethod
     def _bias_visible_init(visible_units):
@@ -78,8 +89,6 @@ class RBM:
         """
         # Vectorize function for easy sampling
         sample_nodes = np.vectorize(self._sample_node)
-        # Initialize the hidden nodes activation
-        # hid_nodes_act = hid_nodes
         # Perform Gibbs sampling
         for step in range(k):
             # Negative gradient: Hidden => Visible (reconstruction of data)
@@ -92,6 +101,14 @@ class RBM:
             self.hid_nodes_recon = sample_nodes(p_h)
         return np.outer(self.vis_nodes_recon, self.hid_nodes_recon)
 
+    def empirical_probability(self, training_data):
+        """
+        Compute the empirical probability of the visible nodes
+        :param training_data: Matrix containing the input data with the samples on the rows and features on columns
+        :return: Vector containing the empirical probability of the visible nodes
+        """
+        return np.divide(np.sum(training_data, 0), training_data.shape[0])
+
     def _update_model_params(self, vis_nodes, lr=0.01, k=1):
         """
         Approximate the gradient using the contrastive divergence algorithm. This is required to compute the weight update,
@@ -103,6 +120,7 @@ class RBM:
         :return: Reconstructed visible nodes are returned, as they are needed to compute the error
         """
         # Compute positive gradient
+        # nodes = self.empirical_probability(vis_nodes)
         pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes)
 
         # Iterate k number of times
@@ -113,14 +131,6 @@ class RBM:
         self.weights += lr * (pos_grad - neg_grad)
         self.bias_hid += lr * (hid_node_recon_data - self.hid_nodes_recon)
 
-    def empirical_probability(self, training_data):
-        """
-        Compute the empirical probability of the visible nodes
-        :param training_data: Matrix containing the input data with the samples on the rows and features on columns
-        :return: Vector containing the empirical probability of the visible nodes
-        """
-        return np.divide(np.sum(training_data, 0), training_data.shape[0])
-
     @staticmethod
     def _sample_node(prob):
         """
@@ -130,40 +140,35 @@ class RBM:
         """
         return np.random.binomial(1, prob)  # If you sample binomial once you sample Bernoulli
 
-    def train(self, input_data, max_epochs=100, lr=0.01, error_threshold=0.1):
+    def train(self, input_data, max_iterations=100, lr=0.01):
         """
         Train the restricted Boltzmann machine (RBM)
         :param input_data: Matrix containing samples and features
-        :param max_epochs: Integer corresponding to the maximum number of iterations over one training batch
+        :param max_iterations: Integer corresponding to the maximum number of iterations over one training batch
         :param lr: Float corresponding to the learning rate of the model
-        :param error_threshold: Float, if error is below this value, model can stop training
         """
-        epoch = 0
-        error_square = float("inf")
+        for epoch in range(max_iterations):
+            for i in range(input_data.shape[0]):
+                # Do contrastive divergence algorithm
+                self._update_model_params(input_data[i, :], lr=lr)
+            # check model here
 
-        while epoch <= max_epochs and error_square > error_threshold:
-            # First compute the empirical distribution of the visible nodes
-            p_v = self.empirical_probability(input_data)
-            # Vectorize function for easy sampling
-            sample_nodes = np.vectorize(self._sample_node)
-            v = sample_nodes(p_v)
-            # Do contrastive divergence algorithm
-            self._update_model_params(v, lr=lr)
-            # Compute error
-            error_square = hf.squared_recon_error(v, self.vis_nodes_recon)
-            # error_cross = hf.cross_entropy_error(v, self.vis_nodes_recon)
-            # print("Squared error: %.3f" % error_square + "\n")
-            # # print("Cross entropy error: %.3f" % error_cross + "\n")
-            # print("Epoch: " + str(epoch) + "\n")
-            epoch += 1
-
-        p_v = self._probability_visible(self.hid_nodes_recon)
-        p_h = self._probability_hidden(self.vis_nodes_recon)
-        print(p_v)
-        print(p_h)
-
-    def make_prediction(self):
+    def check_model(self):
         """
-        Makes prediction of the state of the visible nodes
+        Check the model by computing the partition function and see if the
         :return:
         """
+
+    def make_prediction(self, sample_data):
+        """
+        Makes prediction of the state of the visible nodes
+        :param sample_data: Sample of the class you want to predict. Predict hidden nodes
+        :return: Nothing
+        """
+        p_h = self._probability_hidden(sample_data)
+        sample_nodes = np.vectorize(self._sample_node)
+        h = sample_nodes(p_h)
+        p_v = self._probability_visible(h)
+        v = sample_nodes(p_v)
+        print(h)
+        print(v)

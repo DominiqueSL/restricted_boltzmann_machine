@@ -26,7 +26,7 @@ num_hidden = 4
 r = rbm.RBM(training_data=training_data, num_visible=training_data.shape[0], num_hidden=num_hidden)
 r.train(training_data, max_iterations=5000, lr=0.01)
 r.make_prediction(np.transpose(np.array([[0.0, 0.0, 0.0, 1.0, 1.0, 0.0]])))
-# r.make_prediction(np.transpose(np.array([[0.0, 0.0, 0.0, 1.0, 1.0, 0.0],[0.0, 0.0, 1.0, 1.0, 0.0, 0.0]])))
+# r.make_prediction(np.transpose(np.array([[0.0, 0.0, 1.0, 1.0, 0.0, 0.0]])))
 
 # Save output
 

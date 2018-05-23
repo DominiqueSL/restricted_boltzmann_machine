@@ -15,7 +15,8 @@ class RBM:
         self.hidden_nodes = np.ones(num_hidden)
         self.weights = np.random.normal(0.0, 0.01, (num_visible, num_hidden))
         self.bias_hid = np.zeros(num_hidden)
-        self.bias_vis = self._bias_visible_init(training_data)
+        # self.bias_vis = self._bias_visible_init(training_data)
+        self.bias_vis = np.zeros(num_visible)
         self.vis_nodes_recon = np.zeros(training_data.shape)
         self.p_h_data = np.zeros(num_hidden)
         self.hid_nodes_recon = np.zeros(num_hidden)
@@ -25,12 +26,14 @@ class RBM:
                                                                            visible_nodes) - np.dot(
             np.transpose(self.bias_vis), visible_nodes)
 
-    def _partition_function(self, energy):
+    def _free_energy(self, weights, visible_nodes, bias_vis, bias_hid):
         """
-        :param energy:
-        :return:
+        Free energy computation without the use of the partition function.
+        :param visible_nodes: Vector corresponding to the activations of the visible units
+        :return: Float corresponding to the free energy of a visible vector
         """
-        return np.exp(-energy)
+        input_hidden = self._probability_hidden(visible_nodes, weights, bias_hid)
+        return - np.dot(visible_nodes, bias_vis) - np.sum(np.log(1 + np.exp(input_hidden)))
 
     @staticmethod
     def _bias_visible_init(visible_units):
@@ -43,16 +46,18 @@ class RBM:
         denominator = np.subtract(np.ones(proportion.shape), proportion)
         return np.log(np.divide(proportion, denominator))
 
-    def _probability_hidden(self, visible_nodes):
+    @staticmethod
+    def _probability_hidden(visible_nodes, weights, bias_hid):
         """
         Computes the probability of turning on a hidden unit.
         :param visible_nodes: vector containing the activations of the visible nodes
         :return: Vector with the probability all the hidden nodes. Size of the vector should correspond to the number
         of hidden units.
         """
-        return hf.sigmoid(self.bias_hid + np.dot(np.transpose(visible_nodes), self.weights))
+        return hf.sigmoid(bias_hid + np.dot(np.transpose(visible_nodes), weights))
 
-    def _probability_visible(self, hidden_nodes):
+    @staticmethod
+    def _probability_visible(hidden_nodes, weights, bias_vis):
         """
         Computes the conditional probability of turning on a visible unit.
         Implemented according to formula in Hinton's Practical guide to Restricted Boltzmann machine
@@ -60,9 +65,9 @@ class RBM:
         :param hidden_nodes: vector containing the activations of the hidden nodes
         :return: float containing probability of visible unit (single node)
         """
-        return hf.sigmoid(self.bias_vis + np.dot(self.weights, np.transpose(hidden_nodes)))
+        return hf.sigmoid(bias_vis + np.dot(hidden_nodes, np.transpose(weights)))
 
-    def _pos_gradient(self, vis_nodes):
+    def _pos_gradient(self, vis_nodes, weights, bias_hid):
         """
         Compute the positive gradient step, required for the contrastive divergence algorithm.
         :param vis_nodes: Vector containing the activation of the visible nodes
@@ -70,7 +75,7 @@ class RBM:
         :return: Vector with the hidden node activation
         """
         # Positive gradient: Visible => Hidden
-        self.p_h_data = self._probability_hidden(vis_nodes)
+        self.p_h_data = self._probability_hidden(vis_nodes, weights, bias_hid)
 
         # Sample from this probability distribution
         sample_nodes = np.vectorize(self._sample_node)
@@ -79,7 +84,7 @@ class RBM:
         # Data outer product
         return np.outer(vis_nodes, self.hid_nodes_recon), self.hid_nodes_recon
 
-    def _neg_gradient(self, k=2):
+    def _neg_gradient(self, weights, bias_vis, bias_hid, k=2):
         """
         Compute the outer product between hidden and visible nodes, which are obtained from reconstructions.
         :param k: Integer corresponding to the number of Gibbs sampling steps
@@ -92,11 +97,11 @@ class RBM:
         # Perform Gibbs sampling
         for step in range(k):
             # Negative gradient: Hidden => Visible (reconstruction of data)
-            p_v = self._probability_visible(self.hid_nodes_recon)
+            p_v = self._probability_visible(self.hid_nodes_recon, weights, bias_vis)
             # Sample
             self.vis_nodes_recon = sample_nodes(p_v)
             # Reconstruct the hidden nodes from visible again
-            p_h = self._probability_hidden(self.vis_nodes_recon)
+            p_h = self._probability_hidden(self.vis_nodes_recon, weights, bias_hid)
             # Sample from this probability distribution
             self.hid_nodes_recon = sample_nodes(p_h)
         return np.outer(self.vis_nodes_recon, self.hid_nodes_recon)
@@ -109,7 +114,7 @@ class RBM:
         """
         return np.divide(np.sum(training_data, 0), training_data.shape[0])
 
-    def _update_model_params(self, vis_nodes, lr=0.01, k=1):
+    def _update_model_params(self, vis_nodes, weights, bias_visible, bias_hidden,  lr=0.01, k=1):
         """
         Approximate the gradient using the contrastive divergence algorithm. This is required to compute the weight update,
         as well as other model parameter updates.
@@ -121,15 +126,17 @@ class RBM:
         """
         # Compute positive gradient
         # nodes = self.empirical_probability(vis_nodes)
-        pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes)
+        pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes, weights, bias_hidden)
 
         # Iterate k number of times
         for i in range(k):
-            neg_grad = self._neg_gradient()
+            neg_grad = self._neg_gradient(weights, bias_visible, bias_hidden)
 
         # Update
-        self.weights += lr * (pos_grad - neg_grad)
-        self.bias_hid += lr * (hid_node_recon_data - self.hid_nodes_recon)
+        weights += lr * (pos_grad - neg_grad)
+        bias_hidden += lr * (hid_node_recon_data - self.hid_nodes_recon)
+        bias_visible += lr * (vis_nodes - self.vis_nodes_recon)
+        return weights, bias_visible, bias_hidden
 
     @staticmethod
     def _sample_node(prob):
@@ -140,18 +147,49 @@ class RBM:
         """
         return np.random.binomial(1, prob)  # If you sample binomial once you sample Bernoulli
 
-    def train(self, input_data, max_iterations=100, lr=0.01):
+    def train(self, input_data, split=0.8, max_iterations=100, lr=0.01):
         """
         Train the restricted Boltzmann machine (RBM)
         :param input_data: Matrix containing samples and features
+        :param split: Float corresponding with the
         :param max_iterations: Integer corresponding to the maximum number of iterations over one training batch
         :param lr: Float corresponding to the learning rate of the model
         """
+        counter = 0
+
         for epoch in range(max_iterations):
-            for i in range(input_data.shape[0]):
+            # Split up the data into training (9 parts), validation (1 part)
+            split_nr = int(input_data.shape[0] * split * 0.9)
+            np.random.shuffle(input_data)
+            train = input_data[0:split_nr, :]
+            val = input_data[split_nr:, :]
+
+            # Initialize the parameters
+            weights = self.weights
+            bias_vis = self.bias_vis
+            bias_hid = self.bias_hid
+            free_energy_train = np.zeros(train.shape[0])
+            free_energy_val = np.zeros(val.shape[0])
+
+            # Train RBM
+            for i in range(train.shape[0]):
                 # Do contrastive divergence algorithm
-                self._update_model_params(input_data[i, :], lr=lr)
-            # check model here
+                weights, bias_vis, bias_hid = self._update_model_params(train[i, :], weights, bias_vis, bias_hid, lr=lr)
+                free_energy_train[i] = self._free_energy(weights, train[i, :], bias_vis, bias_hid)
+            # Validate RBM
+            for j in range(val.shape[0]):
+                free_energy_val[j] = self._free_energy(weights, val[j, :], bias_vis, bias_hid)
+
+            # Update here if the validation free energy does not go up
+            # print("Epoch: " + str(epoch) + " \n")
+
+            if np.abs(np.average(free_energy_val) - np.average(free_energy_train)) < 0.1:
+                self.weights = weights
+                self.bias_hid = bias_hid
+                self.bias_vis = bias_vis
+                # print("Updated the model parameters" + str(counter))
+                counter+=1
+
 
     def check_model(self):
         """
@@ -165,10 +203,10 @@ class RBM:
         :param sample_data: Sample of the class you want to predict. Predict hidden nodes
         :return: Nothing
         """
-        p_h = self._probability_hidden(sample_data)
+        p_h = self._probability_hidden(sample_data, self.weights, self.bias_hid)
         sample_nodes = np.vectorize(self._sample_node)
         h = sample_nodes(p_h)
-        p_v = self._probability_visible(h)
+        p_v = self._probability_visible(h, self.weights, self.bias_vis)
         v = sample_nodes(p_v)
         print(h)
         print(v)

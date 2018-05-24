@@ -23,9 +23,9 @@ num_hidden = 4
 # mnist.train._images[mnist.train._images[[0]] >=0.5] = 1
 # mnist.train._images[[0]<0.5] = 0
 
-r = rbm.RBM(training_data=training_data, num_visible=training_data.shape[0], num_hidden=num_hidden)
-r.train(training_data, max_iterations=5000, lr=0.01)
-r.make_prediction(np.transpose(np.array([[0.0, 0.0, 0.0, 1.0, 1.0, 0.0]])))
+r = rbm.RBM(training_data=image_data, num_visible=image_data.shape[1], num_hidden=num_hidden)
+r.train(image_data, max_iterations=100, lr=0.01)
+# r.make_prediction(np.transpose(np.array([[0.0, 0.0, 0.0, 1.0, 1.0, 0.0]])))
 # r.make_prediction(np.transpose(np.array([[0.0, 0.0, 1.0, 1.0, 0.0, 0.0]])))
 
 # Save output

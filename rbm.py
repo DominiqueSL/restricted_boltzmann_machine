@@ -15,25 +15,10 @@ class RBM:
         self.hidden_nodes = np.ones(num_hidden)
         self.weights = np.random.normal(0.0, 0.01, (num_visible, num_hidden))
         self.bias_hid = np.zeros(num_hidden)
-        # self.bias_vis = self._bias_visible_init(training_data)
-        self.bias_vis = np.zeros(num_visible)
+        self.bias_vis = self._bias_visible_init(training_data)
         self.vis_nodes_recon = np.zeros(training_data.shape)
         self.p_h_data = np.zeros(num_hidden)
         self.hid_nodes_recon = np.zeros(num_hidden)
-
-    def _energy(self, visible_nodes, hidden_nodes):
-        return -np.dot(np.transpose(hidden_nodes), self.bias_hid) - np.dot(np.tranpose(hidden_nodes), self.weights,
-                                                                           visible_nodes) - np.dot(
-            np.transpose(self.bias_vis), visible_nodes)
-
-    def _free_energy(self, weights, visible_nodes, bias_vis, bias_hid):
-        """
-        Free energy computation without the use of the partition function.
-        :param visible_nodes: Vector corresponding to the activations of the visible units
-        :return: Float corresponding to the free energy of a visible vector
-        """
-        input_hidden = self._probability_hidden(visible_nodes, weights, bias_hid)
-        return - np.dot(visible_nodes, bias_vis) - np.sum(np.log(1 + np.exp(input_hidden)))
 
     @staticmethod
     def _bias_visible_init(visible_units):
@@ -46,18 +31,16 @@ class RBM:
         denominator = np.subtract(np.ones(proportion.shape), proportion)
         return np.log(np.divide(proportion, denominator))
 
-    @staticmethod
-    def _probability_hidden(visible_nodes, weights, bias_hid):
+    def _probability_hidden(self, visible_nodes):
         """
         Computes the probability of turning on a hidden unit.
         :param visible_nodes: vector containing the activations of the visible nodes
         :return: Vector with the probability all the hidden nodes. Size of the vector should correspond to the number
         of hidden units.
         """
-        return hf.sigmoid(bias_hid + np.dot(np.transpose(visible_nodes), weights))
+        return hf.sigmoid(self.bias_hid + np.dot(np.transpose(visible_nodes), self.weights))
 
-    @staticmethod
-    def _probability_visible(hidden_nodes, weights, bias_vis):
+    def _probability_visible(self, hidden_nodes):
         """
         Computes the conditional probability of turning on a visible unit.
         Implemented according to formula in Hinton's Practical guide to Restricted Boltzmann machine
@@ -65,9 +48,9 @@ class RBM:
         :param hidden_nodes: vector containing the activations of the hidden nodes
         :return: float containing probability of visible unit (single node)
         """
-        return hf.sigmoid(bias_vis + np.dot(hidden_nodes, np.transpose(weights)))
+        return hf.sigmoid(self.bias_vis + np.dot(hidden_nodes, np.transpose(self.weights)))
 
-    def _pos_gradient(self, vis_nodes, weights, bias_hid):
+    def _pos_gradient(self, vis_nodes):
         """
         Compute the positive gradient step, required for the contrastive divergence algorithm.
         :param vis_nodes: Vector containing the activation of the visible nodes
@@ -75,7 +58,7 @@ class RBM:
         :return: Vector with the hidden node activation
         """
         # Positive gradient: Visible => Hidden
-        self.p_h_data = self._probability_hidden(vis_nodes, weights, bias_hid)
+        self.p_h_data = self._probability_hidden(vis_nodes)
 
         # Sample from this probability distribution
         sample_nodes = np.vectorize(self._sample_node)
@@ -84,7 +67,7 @@ class RBM:
         # Data outer product
         return np.outer(vis_nodes, self.hid_nodes_recon), self.hid_nodes_recon
 
-    def _neg_gradient(self, weights, bias_vis, bias_hid, k=2):
+    def _neg_gradient(self, k=2):
         """
         Compute the outer product between hidden and visible nodes, which are obtained from reconstructions.
         :param k: Integer corresponding to the number of Gibbs sampling steps
@@ -97,24 +80,16 @@ class RBM:
         # Perform Gibbs sampling
         for step in range(k):
             # Negative gradient: Hidden => Visible (reconstruction of data)
-            p_v = self._probability_visible(self.hid_nodes_recon, weights, bias_vis)
+            p_v = self._probability_visible(self.hid_nodes_recon)
             # Sample
             self.vis_nodes_recon = sample_nodes(p_v)
             # Reconstruct the hidden nodes from visible again
-            p_h = self._probability_hidden(self.vis_nodes_recon, weights, bias_hid)
+            p_h = self._probability_hidden(self.vis_nodes_recon)
             # Sample from this probability distribution
             self.hid_nodes_recon = sample_nodes(p_h)
         return np.outer(self.vis_nodes_recon, self.hid_nodes_recon)
 
-    def empirical_probability(self, training_data):
-        """
-        Compute the empirical probability of the visible nodes
-        :param training_data: Matrix containing the input data with the samples on the rows and features on columns
-        :return: Vector containing the empirical probability of the visible nodes
-        """
-        return np.divide(np.sum(training_data, 0), training_data.shape[0])
-
-    def _update_model_params(self, vis_nodes, weights, bias_visible, bias_hidden,  lr=0.01, k=1):
+    def _update_model_params(self, vis_nodes, lr=0.01, k=1):
         """
         Approximate the gradient using the contrastive divergence algorithm. This is required to compute the weight update,
         as well as other model parameter updates.
@@ -126,17 +101,16 @@ class RBM:
         """
         # Compute positive gradient
         # nodes = self.empirical_probability(vis_nodes)
-        pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes, weights, bias_hidden)
+        pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes)
 
         # Iterate k number of times
         for i in range(k):
-            neg_grad = self._neg_gradient(weights, bias_visible, bias_hidden)
+            neg_grad = self._neg_gradient()
 
         # Update
-        weights += lr * (pos_grad - neg_grad)
-        bias_hidden += lr * (hid_node_recon_data - self.hid_nodes_recon)
-        bias_visible += lr * (vis_nodes - self.vis_nodes_recon)
-        return weights, bias_visible, bias_hidden
+        self.weights += lr * (pos_grad - neg_grad)
+        self.bias_hid += lr * (hid_node_recon_data - self.hid_nodes_recon)
+        self.bias_vis += lr * (vis_nodes - self.vis_nodes_recon)
 
     @staticmethod
     def _sample_node(prob):
@@ -155,8 +129,6 @@ class RBM:
         :param max_iterations: Integer corresponding to the maximum number of iterations over one training batch
         :param lr: Float corresponding to the learning rate of the model
         """
-        counter = 0
-
         for epoch in range(max_iterations):
             # Split up the data into training (9 parts), validation (1 part)
             split_nr = int(input_data.shape[0] * split * 0.9)
@@ -164,38 +136,34 @@ class RBM:
             train = input_data[0:split_nr, :]
             val = input_data[split_nr:, :]
 
-            # Initialize the parameters
-            weights = self.weights
-            bias_vis = self.bias_vis
-            bias_hid = self.bias_hid
-            free_energy_train = np.zeros(train.shape[0])
-            free_energy_val = np.zeros(val.shape[0])
-
+            # Initialization
+            reconstruction_cost = 0
             # Train RBM
             for i in range(train.shape[0]):
                 # Do contrastive divergence algorithm
-                weights, bias_vis, bias_hid = self._update_model_params(train[i, :], weights, bias_vis, bias_hid, lr=lr)
-                free_energy_train[i] = self._free_energy(weights, train[i, :], bias_vis, bias_hid)
+                self._update_model_params(train[i, :], lr=lr)
+                reconstruction_cost += self._cost_cross_entropy(train[i, :])
+
+            print("Epoch: " + str(epoch+1) + "\n")
+            print("Reconstruction cost on training set: " + str(reconstruction_cost/train.shape[0]).format("%.5f") + "\n")
+
+            reconstruct_cost_val = 0
+
             # Validate RBM
             for j in range(val.shape[0]):
-                free_energy_val[j] = self._free_energy(weights, val[j, :], bias_vis, bias_hid)
+                reconstruct_cost_val += self._cost_cross_entropy(val[j, :])
 
-            # Update here if the validation free energy does not go up
-            # print("Epoch: " + str(epoch) + " \n")
+            print("Reconstruction cost on validation set: " + str(reconstruct_cost_val/val.shape[0]).format("%.5f") + "\n")
 
-            if np.abs(np.average(free_energy_val) - np.average(free_energy_train)) < 0.1:
-                self.weights = weights
-                self.bias_hid = bias_hid
-                self.bias_vis = bias_vis
-                # print("Updated the model parameters" + str(counter))
-                counter+=1
-
-
-    def check_model(self):
+    def _cost_cross_entropy(self, data):
         """
-        Check the model by computing the partition function and see if the
-        :return:
+        Compute cross-entropy to keep track of training of the model.
+        :param data: numpy array containing the input data
+        :return: float containing the reconstruction cost
         """
+        y_n = hf.sigmoid(np.dot(self.hid_nodes_recon, np.transpose(self.weights)))
+        cross_entropy = data * np.log(y_n) + (1 - data) * np.log(1 - y_n)
+        return -cross_entropy
 
     def make_prediction(self, sample_data):
         """
@@ -203,10 +171,10 @@ class RBM:
         :param sample_data: Sample of the class you want to predict. Predict hidden nodes
         :return: Nothing
         """
-        p_h = self._probability_hidden(sample_data, self.weights, self.bias_hid)
+        p_h = self._probability_hidden(sample_data)
         sample_nodes = np.vectorize(self._sample_node)
         h = sample_nodes(p_h)
-        p_v = self._probability_visible(h, self.weights, self.bias_vis)
+        p_v = self._probability_visible(h)
         v = sample_nodes(p_v)
         print(h)
         print(v)

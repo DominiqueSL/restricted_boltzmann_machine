@@ -27,3 +27,17 @@ def loss_plots(loss, epoch):
     :param epoch: List of integers containing the epochs
     :return:
     """
+
+
+def log_likelihood_plots(epoch, likelihood):
+    """
+    Visualize the log likelihood in order to
+    :param epoch: list with all the iterations
+    :param likelihood:
+    :return:
+    """
+    plt.figure()
+    plt.plot(epoch, likelihood)
+    plt.xlabel("Iterations")
+    plt.ylabel("Log-likelihood")
+    plt.show()

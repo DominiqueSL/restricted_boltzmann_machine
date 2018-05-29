@@ -2,7 +2,6 @@ import numpy as np
 import help_functions as hf
 import test_individual_function as test_f
 import visualization as vis
-import matplotlib.pyplot as plt
 
 
 class RBM:
@@ -16,17 +15,17 @@ class RBM:
         """
         self.num_visible = num_visible
         self.num_hidden = num_hidden
+        self.input_data = training_data
         self.hidden_nodes = np.ones(num_hidden)
         np.random.seed(0)
-        self.weights = np.random.normal(0.0, 0.01, (num_visible, num_hidden))
-        self.bias_hid = np.zeros(num_hidden)
+        self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
+        self.bias_hid = np.zeros(self.num_hidden)
         # self.bias_vis = self._bias_visible_init(training_data)
-        self.bias_vis = np.zeros(num_visible)
-        self.vis_nodes_recon = np.zeros(training_data.shape[1])
-        self.p_h_data = np.zeros(num_hidden)
-        self.hid_nodes_recon = np.zeros(num_hidden)
-        self.likelihood = 0
-        self.all_hidden_recon = np.zeros((num_visible, num_hidden))
+        self.bias_vis = np.zeros(self.num_visible)
+        self.vis_nodes_recon = np.zeros(self.num_visible)
+        self.p_h_data = np.zeros(self.num_hidden)
+        self.hid_nodes_recon = np.zeros(self.num_hidden)
+        self.gradient = float("inf")
 
     @staticmethod
     def _bias_visible_init(visible_units):
@@ -110,7 +109,7 @@ class RBM:
             self.hid_nodes_recon = sample_nodes(p_h)
         return np.outer(self.vis_nodes_recon, self.hid_nodes_recon)
 
-    def _update_model_params(self, vis_nodes, lr=0.01, k=1):
+    def _compute_model_params(self, vis_nodes, lr=0.01, k=1):
         """
         Approximate the gradient using the contrastive divergence algorithm. This is required to compute the weight update,
         as well as other model parameter updates.
@@ -129,9 +128,8 @@ class RBM:
             neg_grad = self._neg_gradient()
 
         # Update
-        self.likelihood += (pos_grad - neg_grad)
-        # print(self.likelihood)
-        self.weights += lr * self.likelihood
+        self.gradient = lr * (pos_grad - neg_grad)
+        self.weights += lr * (pos_grad - neg_grad)
         self.bias_hid += lr * (hid_node_recon_data - self.hid_nodes_recon)
         self.bias_vis += lr * (vis_nodes - self.vis_nodes_recon)
 
@@ -144,79 +142,95 @@ class RBM:
         """
         return np.random.binomial(1, prob)  # If you sample binomial once you sample Bernoulli
 
-    def train(self, input_data, split=0.8, max_iterations=100, lr=0.01, k=1):
+    def _update_model_parameters(self, training_set):
+        """
+        Update the model parameters, by using function to compute the model parameters, and dividing by the number of
+        samples.
+        :param training_set: numpy array containing the training samples
+        """
+        # Loop over all the training vectors
+        for i in range(train.shape[0]):
+            # This can be further vectorized
+            # Do contrastive divergence algorithm
+            self._compute_model_params(train[i, :], lr=lr, k=k)
+            # self.all_hidden_recon[i, :] = self.hid_nodes_recon
+
+        # Normalize all the parameters by dividing by the number of training samples
+        self.weights = np.divide(self.weights, train.shape[0])
+        self.bias_vis = np.divide(self.bias_vis, train.shape[0])
+        self.bias_hid = np.divide(self.bias_hid, train.shape[0])
+
+    def _compute_reconstruction_cost(self, data_set):
+        """
+        Function that computes the full reconstruction error
+        Error is computed using the cross-entropy, as stated in Hinton's Practical Guide to training Boltzmann machines
+        => Most appropriate for Contrastive Divergence
+        :param data_set: numpy array with the dataset on which we have to compute the error
+        :return: Float corresponding to the reconstruction cost of the dataset
+        """
+        # Initialize the reconstruction cost
+        reconstruction_cost = 0
+        # Loop over all samples again, with the computed weights and biases
+        for m in range(data_set.shape[0]):
+            p_h = self._probability_hidden(data_set[m, :])
+            h = np.zeros(p_h.shape[0])
+            for n in range(p_h.shape[0]):
+                h[n] = self._sample_node(p_h[n])
+
+            # Compute the reconstruction cost, sum over all the training samples
+            reconstruction_cost += self._cost_cross_entropy(data_set[m, :], h)
+            # likelihood = self._likelihood(train[m, :], h)
+        # likelihood_train[epoch] = likelihood
+
+        # Average out the reconstruction cost, by averaging it over all the nodes etc.
+        reconstruction_cost_train = np.average(reconstruction_cost / data_set.shape[0])
+        return reconstruction_cost_train
+
+    def train(self, split=0.8, max_iterations=100, lr=0.01, k=1):
         """
         Train the restricted Boltzmann machine (RBM)
-        :param input_data: Matrix containing samples and features
-        :param split: Float corresponding with the
+        :param split: Float corresponding with the split into train and testing set
         :param max_iterations: Integer corresponding to the maximum number of iterations over one training batch
         :param lr: Float corresponding to the learning rate of the model
         """
-        log_loss = np.zeros(max_iterations+1)
         epoch = 0
-        gradient = float("inf")
         likelihood_train = np.zeros(max_iterations)
         likelihood_val = np.zeros(max_iterations)
         likelihood = 0
         reconstruction_cost_train = np.zeros(max_iterations)
         reconstruction_cost_val = np.zeros(max_iterations)
-
-        while epoch < max_iterations and gradient != 0:
+        # Split into train and test
+        train_set = self.input_data[int(split * self.input_data.shape[0])]
+        # Iterate over training set to train the RBM until conditions are met
+        while epoch < max_iterations and self.gradient != 0:
             # Split up the data into training (9 parts), validation (1 part)
-            split_nr = int(input_data.shape[0] * split * 0.9)
-            np.random.shuffle(input_data)
-            train = input_data[0:split_nr, :]
-            val = input_data[split_nr:, :]
+            train_split = int(train_set.shape[0] * 0.9)
+            # Shuffle dataset
+            np.random.shuffle(train_set)
+            train = train_set[0:train_split, :]
+            val = train_set[train_split:, :]
 
-            # Initialization
-            reconstruction_cost = 0
-            # Train RBM
-            # sum loss per example and divide by the number of samples (average loss)
-            for i in range(train.shape[0]):
-                # This can be further vectorized
-                # Do contrastive divergence algorithm
-                self._update_model_params(train[i, :], lr=lr, k=k)
-                # self.all_hidden_recon[i, :] = self.hid_nodes_recon
-
-            self.weights = np.divide(self.weights, train.shape[0])
-            self.bias_vis = np.divide(self.bias_vis, train.shape[0])
-            self.bias_hid = np.divide(self.bias_hid, train.shape[0])
-
-            for m in range(train.shape[0]):
-                p_h = self._probability_hidden(train[m, :])
-                h = np.zeros(p_h.shape[0])
-                for n in range(p_h.shape[0]):
-                    h[n] = self._sample_node(p_h[n])
-
-                reconstruction_cost += self._cost_cross_entropy(train[m, :], h)
-                # likelihood = self._likelihood(train[m, :], h)
-            # likelihood_train[epoch] = likelihood
-            # log_loss[epoch] = np.divide(np.sum(self.likelihood), train.shape[0])
-            reconstruction_cost_train[epoch] = np.average(reconstruction_cost/train.shape[0])
+            # Initialize reconstruction cost
+            self._update_model_parameters(train)
+            # Compute reconstruction
+            reconstruction_cost_train[epoch] = self._compute_reconstruction_cost(train)
             print("Epoch: " + str(epoch+1) + "\n")
-            # print("Reconstruction cost on training set: " + str(reconstruction_cost/train.shape[0]).format("%.5f") + "\n")
-            print("Average reconstruction cost on training set: " + str(reconstruction_cost/train.shape[0]).format("%.5f") + "\n")
-            reconstruction_cost = 0
-
-            # Validate RBM
-            for j in range(val.shape[0]):
-                p_h_val = self._probability_hidden(val[j, :])
-                h_val = np.zeros(p_h_val.shape[0])
-                for k in range(p_h_val.shape[0]):
-                    h_val[k] = self._sample_node(p_h_val[k])
-
-                reconstruction_cost += self._cost_cross_entropy(val[j, :], h_val)
-                # likelihood_val[epoch] += self._likelihood(val[j, :], h_val)
-            print("Reconstruction cost on validation set: " + str(reconstruction_cost/val.shape[0]).format("%.5f") + "\n")
-            reconstruction_cost_val[epoch] = np.average(reconstruction_cost/val.shape[0])
+            print("Average reconstruction cost on training set: " + str(reconstruction_cost_train).format("%.5f") + "\n")
+            # Re-initialize the reconstruction for validation again
+            reconstruction_cost_val[epoch] = self._compute_reconstruction_cost(val)
+            # likelihood_val[epoch] += self._likelihood(val[j, :], h_val)
+            print("Average reconstruction cost on validation set: " + str(reconstruction_cost_val).format("%.5f") + "\n")
             epoch += 1
         # Plot the likelihood
         # vis.log_likelihood_plots(range(max_iterations), likelihood_train)
         # vis.log_likelihood_plots(range(max_iterations), likelihood_val)
-        plt.figure()
-        plt.plot(range(max_iterations), reconstruction_cost_train)
-        plt.plot(range(max_iterations), reconstruction_cost_val)
-        plt.show()
+        # Visualize the loss plots
+
+    def test(self):
+        """
+        Run the final weights with the test set and see if
+        :return:
+        """
 
     def _cost_cross_entropy(self, data, hidden_recon):
         """

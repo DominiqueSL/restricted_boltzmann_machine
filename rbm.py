@@ -2,6 +2,7 @@ import numpy as np
 import help_functions as hf
 import test_individual_function as test_f
 import visualization as vis
+import matplotlib.pyplot as plt
 
 
 class RBM:
@@ -17,15 +18,17 @@ class RBM:
         self.num_hidden = num_hidden
         self.input_data = training_data
         self.hidden_nodes = np.ones(num_hidden)
-        np.random.seed(0)
         self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
         self.bias_hid = np.zeros(self.num_hidden)
-        # self.bias_vis = self._bias_visible_init(training_data)
-        self.bias_vis = np.zeros(self.num_visible)
+        self.bias_vis = self._bias_visible_init(training_data)
+        # self.bias_vis = np.zeros(self.num_visible) # in case everything is 1 or zero
+        self.bias_vis_update = self.bias_vis
+        self.bias_hid_update = self.bias_hid
         self.vis_nodes_recon = np.zeros(self.num_visible)
         self.p_h_data = np.zeros(self.num_hidden)
         self.hid_nodes_recon = np.zeros(self.num_hidden)
-        self.gradient = float("inf")
+        self.gradient = float("inf") # Maybe delete later
+        self.gradient_update = np.zeros((self.num_visible, self.num_hidden))
 
     @staticmethod
     def _bias_visible_init(visible_units):
@@ -82,7 +85,7 @@ class RBM:
         test_f.test_outer_prod_data(pos_grad, self.weights)
         return pos_grad, self.hid_nodes_recon
 
-    def _neg_gradient(self, k=2):
+    def _neg_gradient(self, k=1):
         """
         Compute the outer product between hidden and visible nodes, which are obtained from reconstructions.
         :param k: Integer corresponding to the number of Gibbs sampling steps
@@ -104,9 +107,8 @@ class RBM:
             # Sample from this probability distribution
             for j in range(p_h.shape[0]):
                 self.hid_nodes_recon[j] = self._sample_node(p_h[j])
-
             test_f.test_sampling(self.hid_nodes_recon, self.num_hidden)
-        return np.outer(self.vis_nodes_recon, self.hid_nodes_recon)
+        return np.outer(p_v, p_h), p_v, p_h
 
     def _compute_model_params(self, vis_nodes, lr=0.01, k=1):
         """
@@ -119,18 +121,23 @@ class RBM:
         :return: Reconstructed visible nodes are returned, as they are needed to compute the error
         """
         # Compute positive gradient
-        # nodes = self.empirical_probability(vis_nodes)
         pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes)
 
         # Iterate k number of times
         for i in range(k):
-            neg_grad = self._neg_gradient()
+            neg_grad, p_v_recon, p_h_recon = self._neg_gradient()
+
+        # Compute reconstruction error
+        recon = self._cost_cross_entropy(vis_nodes, p_v_recon)
 
         # Update
-        self.gradient = np.average(np.average(lr * (pos_grad - neg_grad)))
-        self.weights += lr * (pos_grad - neg_grad)
-        self.bias_hid += lr * (hid_node_recon_data - self.hid_nodes_recon)
-        self.bias_vis += lr * (vis_nodes - self.vis_nodes_recon)
+        # Differences here compared to the old code
+        self.gradient = np.average(np.average(lr * (pos_grad - neg_grad))) # Possibly delete
+        self.gradient_update += lr * (pos_grad - neg_grad)
+        self.bias_hid_update += lr * (self.p_h_data - p_h_recon)
+        self.bias_vis_update += lr * (vis_nodes - p_v_recon)
+
+        return recon
 
     @staticmethod
     def _sample_node(prob):
@@ -149,22 +156,26 @@ class RBM:
         :param lr: float corresponding to the learning rate of the model
         :param k: integer corresponding to the number of Contrastive Divergence steps
         """
+        recon = np.zeros(self.num_visible) # Initialize
         # Loop over all the training vectors
         for i in range(training_set.shape[0]):
             # This can be further vectorized
             # Do contrastive divergence algorithm
-            self._compute_model_params(training_set[i, :], lr=lr, k=k)
+            recon += self._compute_model_params(training_set[i, :], lr=lr, k=k)
             # self.all_hidden_recon[i, :] = self.hid_nodes_recon
 
+        # Update takes place here
         # Normalize all the parameters by dividing by the number of training samples
-        self.weights = np.divide(self.weights, training_set.shape[0])
-        self.bias_vis = np.divide(self.bias_vis, training_set.shape[0])
-        self.bias_hid = np.divide(self.bias_hid, training_set.shape[0])
+        # Check later if division goes well (is every index divided by scalar)
+        self.weights += self.gradient_update / training_set.shape[0]
+        self.bias_vis += self.bias_vis_update / training_set.shape[0]
+        self.bias_hid += self.bias_hid_update / training_set.shape[0]
+        return np.average(recon/training_set.shape[0])
 
-    def _compute_reconstruction_cost(self, data_set):
+    def _compute_reconstruction_cost_val(self, data_set):
         """
         Function that computes the full reconstruction error
-        Error is computed using the cross-entropy, as stated in Hinton's Practical Guide to training Boltzmann machines
+        Error is computed using the cross-entropy, as stated in Hinton's Practical Guide to training Boltzmann  machines
         => Most appropriate for Contrastive Divergence
         :param data_set: numpy array with the dataset on which we have to compute the error
         :return: Float corresponding to the reconstruction cost of the dataset
@@ -178,16 +189,16 @@ class RBM:
             h = np.zeros(p_h.shape[0])
             for n in range(p_h.shape[0]):
                 h[n] = self._sample_node(p_h[n])
-
+            p_v = self._probability_visible(h)
             # Compute the reconstruction cost, sum over all the training samples
-            reconstruction_cost += self._cost_cross_entropy(data_set[m, :], h)
+            reconstruction_cost += self._cost_cross_entropy(data_set[m, :], p_v)
             # log_likelihood += self._likelihood(self.vis_nodes_recon, h)
 
         # Average out the reconstruction cost, by averaging it over all the nodes etc.
-        reconstruction_cost_train = np.average(reconstruction_cost / data_set.shape[0])
+        reconstruction_cost_tot = np.average(reconstruction_cost / data_set.shape[0])
         # log_likelihood = log_likelihood / data_set.shape[0] # Average out over all training samples
-        # return reconstruction_cost_train, log_likelihood
-        return reconstruction_cost_train
+        # return reconstruction_cost_tot, log_likelihood, reconstruction_error
+        return reconstruction_cost_tot
 
     def train(self, split=0.8, max_iterations=100, lr=0.01, k=1):
         """
@@ -203,6 +214,7 @@ class RBM:
         likelihood = 0
         reconstruction_cost_train = np.zeros(max_iterations)
         reconstruction_cost_val = np.zeros(max_iterations)
+        reconstruction_error = np.zeros(max_iterations)
         # Split into train and test
         train_set = self.input_data[:int(split * self.input_data.shape[0]), :]
         # Iterate over training set to train the RBM until conditions are met
@@ -215,22 +227,24 @@ class RBM:
             val = train_set[train_split:, :]
 
             # Initialize reconstruction cost
-            self._update_model_parameters(train, lr=lr, k=k)
+            reconstruction_cost_train[epoch] = self._update_model_parameters(train, lr=lr, k=k)
             # Compute reconstruction
-            # reconstruction_cost_train[epoch], likelihood_train[epoch] = self._compute_reconstruction_cost(train)
-            reconstruction_cost_train[epoch] = self._compute_reconstruction_cost(train)
+            # reconstruction_cost_train[epoch], likelihood_train[epoch], reconstruction_error[epoch] = self._compute_reconstruction_cost(train)
+            # reconstruction_cost_train[epoch] = self._compute_reconstruction_cost(train)
 
             print("Epoch: " + str(epoch+1) + "\n")
             print("Average reconstruction cost on training set: " + str(reconstruction_cost_train[epoch]).format("%.5f") + "\n")
             # Re-initialize the reconstruction for validation again
-            # reconstruction_cost_val[epoch], likelihood_val[epoch] = self._compute_reconstruction_cost(val)
-            reconstruction_cost_val[epoch] = self._compute_reconstruction_cost(val)
-            # likelihood_val[epoch] += self._likelihood(val[j, :], h_val)
+            # reconstruction_cost_val[epoch], likelihood_val[epoch], reconstruction_error_val[epoch] = self._compute_reconstruction_cost(val)
+            reconstruction_cost_val[epoch] = self._compute_reconstruction_cost_val(val)
             print("Average reconstruction cost on validation set: " + str(reconstruction_cost_val[epoch]).format("%.5f") + "\n")
             epoch += 1
         # Plot the likelihood
-        # vis.log_likelihood_plots(range(epoch), likelihood_train, likelihood_val)
+        vis.log_likelihood_plots(range(epoch), likelihood_train, likelihood_val)
         vis.loss_plots(range(epoch), reconstruction_cost_train, reconstruction_cost_val)
+        plt.figure()
+        plt.plot(range(epoch), reconstruction_error)
+        plt.show()
         # Visualize the loss plots
 
     def test(self, test_data_set):
@@ -239,13 +253,14 @@ class RBM:
         :param test_data_set: numpy array corresponding with the test data set
         """
 
-    def _cost_cross_entropy(self, data, hidden_recon):
+    def _cost_cross_entropy(self, data, y_n):
         """
         Compute cross-entropy to keep track of training of the model.
         :param data: numpy array containing the input data
         :return: float containing the reconstruction cost
         """
-        y_n = hf.sigmoid(self.bias_vis + np.dot(hidden_recon, np.transpose(self.weights)))
+        # y_n = hf.sigmoid(self.bias_vis + np.dot(hid, np.transpose(self.weights)))
+
         cross_entropy = data * np.log(y_n) + (1 - data) * np.log(1 - y_n)
         return -cross_entropy
 
@@ -262,49 +277,3 @@ class RBM:
         v = sample_nodes(p_v)
         print(h)
         print(v)
-
-    def _energy(self, vis_nodes, hid_nodes):
-        """
-        Function that computes the energy function using the hidden and visible nodes
-        :param vis_nodes: numpy array corresponding to the visible nodes
-        :param hid_nodes: numpy array corresponding to the hidden nodes
-        :return:
-        """
-        return -np.dot(np.transpose(hid_nodes), self.bias_hid) - (np.dot(np.transpose(hid_nodes), np.transpose(self.weights))
-                                                                * vis_nodes) - np.dot(
-            np.transpose(self.bias_vis), vis_nodes)
-
-    def _partition_function(self, visible, hidden):
-        """
-        :param vis: Vector corresponding with the visible nodes in the machine
-        :param hid: Vector corresponding with the hidden nodes in the machine
-        :return:Float corresponding to the partition function
-        """
-        return np.sum(np.exp(-self._energy(visible, hidden)))
-
-    def _likelihood(self, blabla, haha):
-        """
-        Compute the likelihood according to paper by Hinton.
-        :param: numpy array corresponding to the reconstructed visible units
-        :param: numpy array corresponding to the reconstructed hidden units
-        :return: Float corresponding to the likelihood of the model
-        """
-        nodes_visible = blabla
-        nodes_hidden = haha
-        vis = np.array([[1, 0, 1, 0, 0, 0]])
-        hid = np.transpose(np.array([[1, 0, 0, 0]]))
-        partition_function = np.sum(np.exp(-np.dot(np.transpose(nodes_hidden), self.bias_hid) - np.dot(np.dot(np.transpose(nodes_hidden), np.transpose(self.weights)),
-                                                                           nodes_visible) - np.dot(
-            np.transpose(self.bias_vis), nodes_visible)))
-        energy = -np.dot(np.transpose(nodes_hidden), self.bias_hid) - (np.dot(np.transpose(nodes_hidden), np.transpose(self.weights))
-                                                                * nodes_visible) - np.dot(
-            np.transpose(self.bias_vis), nodes_visible)
-        likelihood = np.log(np.sum(np.exp(-energy))) - np.log(partition_function)
-        return likelihood
-
-    def free_energy(self, v_sample):
-        ''' Function to compute the free energy '''
-        wx_b = T.dot(v_sample, self.W) + self.hbias
-        vbias_term = T.dot(v_sample, self.vbias)
-        hidden_term = T.sum(T.log(1 + T.exp(wx_b)), axis=1)
-        return -hidden_term - vbias_term

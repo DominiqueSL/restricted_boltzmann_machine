@@ -25,23 +25,23 @@ def test_probability_hid(probability, nr_nodes):
     :return: Error messages in case there is something wrong
     """
     if probability.shape[0] != nr_nodes:
-        sys.exit("Error, probability of visible unit computed incorrectly")
+        raise ValueError("Probability vector dimension does not correspond with number of hidden nodes")
 
     for i in range(nr_nodes):
         if probability[i] < 0 or probability[i] > 1:
-            sys.exit("Error, probability of visible unit computed incorrectly")
+            raise ValueError("Probability of visible unit must be within 0 and 1")
 
     if np.round(probability[0], 4) != 0.5088:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("First index value does not correspond with actual value")
 
     if np.round(probability[1], 4) != 0.4996:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("Second index value does not correspond with actual value")
 
     if np.round(probability[2], 4) != 0.5052:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("Third index value does not correspond with actual value")
 
     if np.round(probability[3], 4) != 0.5089:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("Fourth index value does not correspond with actual value")
 
 
 def test_probability_vis(probability, nr_nodes):
@@ -55,23 +55,23 @@ def test_probability_vis(probability, nr_nodes):
     :return: Error messages in case there is something wrong
     """
     if probability.shape[0] != nr_nodes:
-        sys.exit("Error, probability of visible unit computed incorrectly")
+        raise ValueError("Probability vector dimension does not correspond with number of visible nodes")
 
     for i in range(nr_nodes):
         if probability[i] < 0 or probability[i] > 1:
-            sys.exit("Error, probability of visible unit computed incorrectly")
+            raise ValueError("Probability of visible unit must be within 0 and 1")
 
     if np.round(probability[0], 4) != 0.5000:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("First index value does not correspond with actual value")
 
     if np.round(probability[1], 4) != 0.5000:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("Error, second index value does not correspond with actual value")
 
     if np.round(probability[2], 4) != 0.5000:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("Third index value does not correspond with actual value")
 
     if np.round(probability[3], 4) != 0.5000:
-        sys.exit("Error, function not correctly implemented")
+        raise ValueError("Fourth index value does not correspond with actual value")
 
 
 def test_sampling(samples, nr_nodes):
@@ -82,11 +82,11 @@ def test_sampling(samples, nr_nodes):
     :return: Error message in case there is something wrong
     """
     if samples.shape[0] != nr_nodes:
-        sys.exit("Error, sampling did not go well")
+        raise ValueError("Sampling vector is larger than number of available nodes")
 
     for i in range(nr_nodes):
         if (samples[i] > 1) or (samples[i] < 0):
-            sys.exit("Error, samples should be binary but are not")
+            raise ValueError("Samples should be binary but are not")
 
 
 def test_outer_prod_data(outer_product, weights):
@@ -98,7 +98,7 @@ def test_outer_prod_data(outer_product, weights):
     :return: Error message in case something is wrong
     """
     if outer_product.shape[0] != weights.shape[0] or outer_product.shape[1] != weights.shape[1]:
-        sys.exit("Error, the outer product for gradient computation is wrong (dimension mismatch)")
+        raise ValueError("Dimensions of the outer product for gradient computation is wrong (dimension mismatch)")
 
 
     # Maybe incorporate an outer product that is computed by hand

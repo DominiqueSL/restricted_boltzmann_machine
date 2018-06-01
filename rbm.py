@@ -167,9 +167,9 @@ class RBM:
         # Update takes place here
         # Normalize all the parameters by dividing by the number of training samples
         # Check later if division goes well (is every index divided by scalar)
-        self.weights += self.gradient_update / training_set.shape[0]
-        self.bias_vis += self.bias_vis_update / training_set.shape[0]
-        self.bias_hid += self.bias_hid_update / training_set.shape[0]
+        self.weights = self.gradient_update / training_set.shape[0]
+        self.bias_vis = self.bias_vis_update / training_set.shape[0]
+        self.bias_hid = self.bias_hid_update / training_set.shape[0]
         return np.average(recon/training_set.shape[0])
 
     def _compute_reconstruction_cost_val(self, data_set):

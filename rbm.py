@@ -2,7 +2,6 @@ import numpy as np
 import help_functions as hf
 import test_individual_function as test_f
 import visualization as vis
-import matplotlib.pyplot as plt
 
 
 class RBM:
@@ -20,8 +19,8 @@ class RBM:
         self.hidden_nodes = np.ones(num_hidden)
         self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
         self.bias_hid = np.zeros(self.num_hidden)
-        self.bias_vis = self._bias_visible_init(training_data)
-        # self.bias_vis = np.zeros(self.num_visible) # in case everything is 1 or zero
+        # self.bias_vis = self._bias_visible_init(training_data)
+        self.bias_vis = np.zeros(self.num_visible) # in case everything is 1 or zero
         self.bias_vis_update = self.bias_vis
         self.bias_hid_update = self.bias_hid
         self.vis_nodes_recon = np.zeros(self.num_visible)
@@ -29,6 +28,10 @@ class RBM:
         self.hid_nodes_recon = np.zeros(self.num_hidden)
         self.gradient = float("inf") # Maybe delete later
         self.gradient_update = np.zeros((self.num_visible, self.num_hidden))
+
+        # Ugly inclusions for debugging
+        self.all_p_h_data = 0
+        self.recon_error = 0
 
     @staticmethod
     def _bias_visible_init(visible_units):
@@ -71,10 +74,12 @@ class RBM:
         """
         # Positive gradient: Visible => Hidden
         self.p_h_data = self._probability_hidden(vis_nodes)
+        # if self.all_p_h_data.all(0) or self.all_p_h_data == 0:
+        #     self.all_p_h_data = self.p_h_data
+
+        # self.all_p_h_data = np.append(self.all_p_h_data, self.p_h_data, axis=0)
 
         # Sample from this probability distribution
-        # sample_nodes = np.vectorize(self._sample_node)
-        # self.hid_nodes_recon = sample_nodes(self.p_h_data)
         for i in range(self.p_h_data.shape[0]):
             self.hid_nodes_recon[i] = self._sample_node(self.p_h_data[i])
 
@@ -134,8 +139,9 @@ class RBM:
         # Differences here compared to the old code
         self.gradient = np.average(np.average(lr * (pos_grad - neg_grad))) # Possibly delete
         self.gradient_update += lr * (pos_grad - neg_grad)
-        self.bias_hid_update += lr * (self.p_h_data - p_h_recon)
-        self.bias_vis_update += lr * (vis_nodes - p_v_recon)
+        self.bias_hid_update += lr * (hid_node_recon_data - self.hid_nodes_recon)
+        self.bias_vis_update += lr * (vis_nodes - self.vis_nodes_recon)
+        self.recon_error += np.sum((vis_nodes - self.vis_nodes_recon)**2)
 
         return recon
 
@@ -162,14 +168,15 @@ class RBM:
             # This can be further vectorized
             # Do contrastive divergence algorithm
             recon += self._compute_model_params(training_set[i, :], lr=lr, k=k)
+            self.all_p_h_data[i, :] = self.p_h_data
             # self.all_hidden_recon[i, :] = self.hid_nodes_recon
 
-        # Update takes place here
-        # Normalize all the parameters by dividing by the number of training samples
-        # Check later if division goes well (is every index divided by scalar)
-        self.weights = self.gradient_update / training_set.shape[0]
-        self.bias_vis = self.bias_vis_update / training_set.shape[0]
-        self.bias_hid = self.bias_hid_update / training_set.shape[0]
+        # vis.visualize_hidden_prob_activation(self.all_p_h_data)
+
+        # Visualize the weights and the updates
+        # vis.visualize_hidden_prob_activation(self.all_p_h_data)
+        # vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient_update, self.bias_vis_update, self.bias_hid_update)
+
         return np.average(recon/training_set.shape[0])
 
     def _compute_reconstruction_cost_val(self, data_set):
@@ -182,7 +189,6 @@ class RBM:
         """
         # Initialize the reconstruction cost
         reconstruction_cost = 0
-        log_likelihood = 0
         # Loop over all samples again, with the learnt weights and biases
         for m in range(data_set.shape[0]):
             p_h = self._probability_hidden(data_set[m, :])
@@ -192,11 +198,9 @@ class RBM:
             p_v = self._probability_visible(h)
             # Compute the reconstruction cost, sum over all the training samples
             reconstruction_cost += self._cost_cross_entropy(data_set[m, :], p_v)
-            # log_likelihood += self._likelihood(self.vis_nodes_recon, h)
 
         # Average out the reconstruction cost, by averaging it over all the nodes etc.
         reconstruction_cost_tot = np.average(reconstruction_cost / data_set.shape[0])
-        # log_likelihood = log_likelihood / data_set.shape[0] # Average out over all training samples
         # return reconstruction_cost_tot, log_likelihood, reconstruction_error
         return reconstruction_cost_tot
 
@@ -209,12 +213,8 @@ class RBM:
         :param k: Integer corresponding with the number of contrastive divergence iterations
         """
         epoch = 0
-        likelihood_train = np.zeros(max_iterations)
-        likelihood_val = np.zeros(max_iterations)
-        likelihood = 0
         reconstruction_cost_train = np.zeros(max_iterations)
         reconstruction_cost_val = np.zeros(max_iterations)
-        reconstruction_error = np.zeros(max_iterations)
         # Split into train and test
         train_set = self.input_data[:int(split * self.input_data.shape[0]), :]
         # Iterate over training set to train the RBM until conditions are met
@@ -226,26 +226,36 @@ class RBM:
             train = train_set[:train_split, :]
             val = train_set[train_split:, :]
 
-            # Initialize reconstruction cost
+            self.all_p_h_data = np.zeros((train.shape[0], self.num_hidden))
+
+            # Perform batch-wise training
+            # Incorporate batch size learning later in here
+            # Update parameters and compute reconstructions
             reconstruction_cost_train[epoch] = self._update_model_parameters(train, lr=lr, k=k)
-            # Compute reconstruction
-            # reconstruction_cost_train[epoch], likelihood_train[epoch], reconstruction_error[epoch] = self._compute_reconstruction_cost(train)
-            # reconstruction_cost_train[epoch] = self._compute_reconstruction_cost(train)
+            # Visualize the hidden probability activation and directly save output.
+            # vis.visualize_hidden_prob_activation(self.all_p_h_data, "Hidden_probability_activation_" + str(epoch))
+            # vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient, self.bias_vis_update, self.bias_hid_update, "parameter_histogram_" + str(epoch))
 
             print("Epoch: " + str(epoch+1) + "\n")
+            print("Recon error RMSE: " + str(np.average(self.recon_error)))
             print("Average reconstruction cost on training set: " + str(reconstruction_cost_train[epoch]).format("%.5f") + "\n")
             # Re-initialize the reconstruction for validation again
-            # reconstruction_cost_val[epoch], likelihood_val[epoch], reconstruction_error_val[epoch] = self._compute_reconstruction_cost(val)
             reconstruction_cost_val[epoch] = self._compute_reconstruction_cost_val(val)
-            print("Average reconstruction cost on validation set: " + str(reconstruction_cost_val[epoch]).format("%.5f") + "\n")
+            # print("Average reconstruction cost on validation set: " + str(reconstruction_cost_val[epoch]).format("%.5f") + "\n")
+
+            # Update takes place here
+            # Normalize all the parameters by dividing by the number of training samples
+            # Check later if division goes well (is every index divided by scalar)
+            self.weights = self.gradient_update / train.shape[0]
+            self.bias_vis = self.bias_vis_update / train.shape[0]
+            self.bias_hid = self.bias_hid_update / train.shape[0]
+            self.recon_error = 0
             epoch += 1
-        # Plot the likelihood
-        vis.log_likelihood_plots(range(epoch), likelihood_train, likelihood_val)
+        # Plot the loss
+        print(self.all_p_h_data)
+        print(self.weights)
         vis.loss_plots(range(epoch), reconstruction_cost_train, reconstruction_cost_val)
-        plt.figure()
-        plt.plot(range(epoch), reconstruction_error)
-        plt.show()
-        # Visualize the loss plots
+
 
     def test(self, test_data_set):
         """
@@ -253,7 +263,8 @@ class RBM:
         :param test_data_set: numpy array corresponding with the test data set
         """
 
-    def _cost_cross_entropy(self, data, y_n):
+    @staticmethod
+    def _cost_cross_entropy(data, y_n):
         """
         Compute cross-entropy to keep track of training of the model.
         :param data: numpy array containing the input data

@@ -1,12 +1,14 @@
 import numpy as np
 import os
+import pandas as pd
 
 
 def read_data(filename):
     """
-    Reads data and converts to tensor
+    Reads data and converts to matrix.
+    Incorporate the .glob in this function, in order to read in large amounts of data
     :param filename: String containing filename
-    :return: Tensor containing input data
+    :return: numpy array containing input data
     """
     cwd = os.getcwd()
 
@@ -16,7 +18,7 @@ def read_data(filename):
 
     # Read file
     if filename.find(".csv") != -1:
-        return np.genfromtxt(cwd + filename, delimiter=',')
+        return pd.DataFrame.as_matrix(pd.read_csv(cwd + filename, delimiter=','))
     else:
         return np.loadtxt(cwd + filename)
 

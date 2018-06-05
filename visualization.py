@@ -104,7 +104,7 @@ def model_param_visualization(weights, v_bias, hid_bias, dweights, dv_bias, dhid
         os.mkdir(dir_name)
 
     fig.savefig(cwd + dir_name + name_out + ".png")
-
+    plt.close()
 
 def loss_plots(epoch, loss_train, loss_val):
     """
@@ -113,7 +113,7 @@ def loss_plots(epoch, loss_train, loss_val):
     :param loss_train: numpy array with average loss of training set computed per iteration
     :param loss_val: numpy array with average loss of validation set computed per iteration
     """
-    plt.figure(0)
+    plt.figure()
     plt.plot(epoch, loss_train, "r-")
     plt.plot(epoch, loss_val, "b-")
 
@@ -122,5 +122,4 @@ def loss_plots(epoch, loss_train, loss_val):
     red_patch = mpatches.Patch(color='red', label='Training data')
     blue_patch = mpatches.Patch(color='blue', label='Validation data')
     plt.legend(handles=[red_patch, blue_patch])
-    plt.legend()
     plt.show()

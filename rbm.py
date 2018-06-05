@@ -18,6 +18,7 @@ class RBM:
         self.input_data = training_data
         self.hidden_nodes = np.ones(num_hidden)
         self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
+
         self.bias_hid = np.zeros(self.num_hidden)
         # self.bias_vis = self._bias_visible_init(training_data)
         self.bias_vis = np.zeros(self.num_visible) # in case everything is 1 or zero
@@ -74,20 +75,14 @@ class RBM:
         """
         # Positive gradient: Visible => Hidden
         self.p_h_data = self._probability_hidden(vis_nodes)
-        # if self.all_p_h_data.all(0) or self.all_p_h_data == 0:
-        #     self.all_p_h_data = self.p_h_data
-
-        # self.all_p_h_data = np.append(self.all_p_h_data, self.p_h_data, axis=0)
-
         # Sample from this probability distribution
         for i in range(self.p_h_data.shape[0]):
             self.hid_nodes_recon[i] = self._sample_node(self.p_h_data[i])
 
-        test_f.test_sampling(self.hid_nodes_recon, self.num_hidden)
-
+        # test_f.test_sampling(self.hid_nodes_recon, self.num_hidden)
         # Data outer product
         pos_grad = np.outer(vis_nodes, self.p_h_data)
-        test_f.test_outer_prod_data(pos_grad, self.weights)
+        # test_f.test_outer_prod_data(pos_grad, self.weights)
         return pos_grad, self.hid_nodes_recon
 
     def _neg_gradient(self, k=1):
@@ -105,17 +100,17 @@ class RBM:
             # Sample
             for i in range(p_v.shape[0]):
                 self.vis_nodes_recon[i] = self._sample_node(p_v[i])
-            test_f.test_sampling(self.vis_nodes_recon, self.num_visible)
+            # test_f.test_sampling(self.vis_nodes_recon, self.num_visible)
 
             # Reconstruct the hidden nodes from visible again
             p_h = self._probability_hidden(self.vis_nodes_recon)
             # Sample from this probability distribution
             for j in range(p_h.shape[0]):
                 self.hid_nodes_recon[j] = self._sample_node(p_h[j])
-            test_f.test_sampling(self.hid_nodes_recon, self.num_hidden)
+            # test_f.test_sampling(self.hid_nodes_recon, self.num_hidden)
         return np.outer(p_v, p_h), p_v, p_h
 
-    def _compute_model_params(self, vis_nodes, lr=0.01, k=1):
+    def _compute_model_params(self, vis_nodes, train_size, lr=0.01, k=1):
         """
         Approximate the gradient using the contrastive divergence algorithm. This is required to compute the weight update,
         as well as other model parameter updates.
@@ -129,18 +124,18 @@ class RBM:
         pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes)
 
         # Iterate k number of times
-        for i in range(k):
-            neg_grad, p_v_recon, p_h_recon = self._neg_gradient()
+        # for i in range(k):
+        neg_grad, p_v_recon, p_h_recon = self._neg_gradient(k=k)
 
         # Compute reconstruction error
         recon = self._cost_cross_entropy(vis_nodes, p_v_recon)
 
         # Update
         # Differences here compared to the old code
-        self.gradient = np.average(np.average(lr * (pos_grad - neg_grad))) # Possibly delete
-        self.gradient_update += lr * (pos_grad - neg_grad)
-        self.bias_hid_update += lr * (hid_node_recon_data - self.hid_nodes_recon)
-        self.bias_vis_update += lr * (vis_nodes - self.vis_nodes_recon)
+        # self.gradient = np.average(np.average(lr * (pos_grad - neg_grad))) # Possibly delete
+        self.gradient_update += lr * (pos_grad - neg_grad) * (1.0 / train_size)
+        self.bias_hid_update += lr * (self.p_h_data - p_h_recon) * (1.0 / train_size)
+        self.bias_vis_update += lr * (vis_nodes - p_v_recon) * (1.0 / train_size)
         self.recon_error += np.sum((vis_nodes - self.vis_nodes_recon)**2)
 
         return recon
@@ -154,7 +149,7 @@ class RBM:
         """
         return np.random.binomial(1, prob)  # If you sample binomial once you sample Bernoulli
 
-    def _update_model_parameters(self, training_set, lr=0.01, k=1):
+    def _recon_training(self, training_set, lr=0.01, k=1):
         """
         Update the model parameters, by using function to compute the model parameters, and dividing by the number of
         samples.
@@ -167,15 +162,8 @@ class RBM:
         for i in range(training_set.shape[0]):
             # This can be further vectorized
             # Do contrastive divergence algorithm
-            recon += self._compute_model_params(training_set[i, :], lr=lr, k=k)
+            recon += self._compute_model_params(training_set[i, :], training_set.shape[0], lr=lr, k=k)
             self.all_p_h_data[i, :] = self.p_h_data
-            # self.all_hidden_recon[i, :] = self.hid_nodes_recon
-
-        # vis.visualize_hidden_prob_activation(self.all_p_h_data)
-
-        # Visualize the weights and the updates
-        # vis.visualize_hidden_prob_activation(self.all_p_h_data)
-        # vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient_update, self.bias_vis_update, self.bias_hid_update)
 
         return np.average(recon/training_set.shape[0])
 
@@ -204,6 +192,16 @@ class RBM:
         # return reconstruction_cost_tot, log_likelihood, reconstruction_error
         return reconstruction_cost_tot
 
+    def _update_parameters(self, train_size):
+        """
+        Update all the model parameters (weights, biases)
+        """
+        # Normalize all the parameters by dividing by the number of training samples
+        # Check later if division goes well (is every index divided by scalar)
+        self.weights += self.gradient_update
+        self.bias_vis += self.bias_vis_update
+        self.bias_hid += self.bias_hid_update
+
     def train(self, split=0.8, max_iterations=100, lr=0.01, k=1):
         """
         Train the restricted Boltzmann machine (RBM)
@@ -225,31 +223,31 @@ class RBM:
             np.random.shuffle(train_set)
             train = train_set[:train_split, :]
             val = train_set[train_split:, :]
-
+            # Initialization
             self.all_p_h_data = np.zeros((train.shape[0], self.num_hidden))
 
             # Perform batch-wise training
             # Incorporate batch size learning later in here
             # Update parameters and compute reconstructions
-            reconstruction_cost_train[epoch] = self._update_model_parameters(train, lr=lr, k=k)
+            reconstruction_cost_train[epoch] = self._recon_training(train, lr=lr, k=k)
             # Visualize the hidden probability activation and directly save output.
-            # vis.visualize_hidden_prob_activation(self.all_p_h_data, "Hidden_probability_activation_" + str(epoch))
-            # vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient, self.bias_vis_update, self.bias_hid_update, "parameter_histogram_" + str(epoch))
+            if epoch % 100 == 0:
+                vis.visualize_hidden_prob_activation(self.all_p_h_data, "Hidden_probability_activation_" + str(epoch))
+                vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient_update, self.bias_vis_update, self.bias_hid_update, "parameter_histogram_" + str(epoch))
 
-            print("Epoch: " + str(epoch+1) + "\n")
-            print("Recon error RMSE: " + str(np.average(self.recon_error)))
-            print("Average reconstruction cost on training set: " + str(reconstruction_cost_train[epoch]).format("%.5f") + "\n")
-            # Re-initialize the reconstruction for validation again
-            reconstruction_cost_val[epoch] = self._compute_reconstruction_cost_val(val)
+            # print("Epoch: " + str(epoch+1) + "\n")
+            # print("Recon error RMSE: " + str(self.recon_error / train.shape[0]))
+            # print("Average reconstruction cost on training set: " + str(reconstruction_cost_train[epoch]).format("%.5f") + "\n")
+            # reconstruction_cost_val[epoch] = self._compute_reconstruction_cost_val(val)
             # print("Average reconstruction cost on validation set: " + str(reconstruction_cost_val[epoch]).format("%.5f") + "\n")
 
             # Update takes place here
-            # Normalize all the parameters by dividing by the number of training samples
-            # Check later if division goes well (is every index divided by scalar)
-            self.weights = self.gradient_update / train.shape[0]
-            self.bias_vis = self.bias_vis_update / train.shape[0]
-            self.bias_hid = self.bias_hid_update / train.shape[0]
+            self._update_parameters(train.shape[0])
+            print("hello")
             self.recon_error = 0
+            self.gradient_update = 0
+            self.bias_hid_update = 0
+            self.bias_vis_update = 0
             epoch += 1
         # Plot the loss
         print(self.all_p_h_data)
@@ -270,8 +268,6 @@ class RBM:
         :param data: numpy array containing the input data
         :return: float containing the reconstruction cost
         """
-        # y_n = hf.sigmoid(self.bias_vis + np.dot(hid, np.transpose(self.weights)))
-
         cross_entropy = data * np.log(y_n) + (1 - data) * np.log(1 - y_n)
         return -cross_entropy
 
@@ -281,10 +277,20 @@ class RBM:
         :param sample_data: Sample of the class you want to predict. Predict hidden nodes
         :return: Nothing
         """
+        # Calculate the hidden probability
         p_h = self._probability_hidden(sample_data)
-        sample_nodes = np.vectorize(self._sample_node)
-        h = sample_nodes(p_h)
+        h = np.zeros(p_h)
+
+        # Sample nodes
+        for node in range(p_h):
+            h[node] = self._sample_node(p_h[node])
+
+        # Calculate the visible activation probability
         p_v = self._probability_visible(h)
-        v = sample_nodes(p_v)
+
+        v = np.zeros(p_v)
+        # Sample back to visible again
+        for v_node in range(p_v):
+            v[v_node] = self._sample_node(p_v[v_node])
         print(h)
         print(v)

@@ -13,17 +13,23 @@ class RBM:
         :param num_visible: Integer corresponding to the number of visible units in the network
         :param num_hidden: Integer corresponding to the number of hidden units in the network
         """
+        training_data = np.array(training_data, copy=True) # possibly delete later
         self.num_visible = num_visible
         self.num_hidden = num_hidden
         self.input_data = training_data
         self.hidden_nodes = np.ones(num_hidden)
-        self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
+        # self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
+        np_rng = np.random.RandomState(1234)
 
+        self.weights = np.asarray(np_rng.uniform(
+            low=-0.1 * np.sqrt(6. / (num_hidden + num_visible)),
+            high=0.1 * np.sqrt(6. / (num_hidden + num_visible)),
+            size=(num_visible, num_hidden)))
         self.bias_hid = np.zeros(self.num_hidden)
         # self.bias_vis = self._bias_visible_init(training_data)
         self.bias_vis = np.zeros(self.num_visible) # in case everything is 1 or zero
-        self.bias_vis_update = self.bias_vis
-        self.bias_hid_update = self.bias_hid
+        self.vis_update = np.zeros(self.num_visible)
+        self.hid_update = np.zeros(self.num_hidden)
         self.vis_nodes_recon = np.zeros(self.num_visible)
         self.p_h_data = np.zeros(self.num_hidden)
         self.hid_nodes_recon = np.zeros(self.num_hidden)
@@ -41,6 +47,7 @@ class RBM:
         :param visible_units: The activations of the visible units
         :return: tensor containing the bias of the visible units
         """
+        visible_units = np.array(visible_units, copy=True)
         proportion = np.divide(np.sum(visible_units, 0), visible_units.shape[0])
         denominator = np.subtract(np.ones(proportion.shape), proportion)
         return np.log(np.divide(proportion, denominator))
@@ -66,6 +73,15 @@ class RBM:
         p_v = hf.sigmoid(self.bias_vis + np.dot(hidden_nodes, np.transpose(self.weights)))
         return p_v
 
+    @staticmethod
+    def _sample_node(prob):
+        """
+        Obtain unbiased sample of node. Sample from conditional probability. Needed to perform Gibbs sampling step.
+        :param prob: float corresponding with the probability of a node being activated
+        :return: binary number corresponding with the activation of the node
+        """
+        return np.random.binomial(1, prob)  # If you sample binomial once you sample Bernoulli
+
     def _pos_gradient(self, vis_nodes):
         """
         Compute the positive gradient step, required for the contrastive divergence algorithm.
@@ -74,18 +90,21 @@ class RBM:
         :return: Vector with the hidden node activation
         """
         # Positive gradient: Visible => Hidden
-        self.p_h_data = self._probability_hidden(vis_nodes)
+        p_h_data = self._probability_hidden(vis_nodes)
         # Sample from this probability distribution
-        for i in range(self.p_h_data.shape[0]):
-            self.hid_nodes_recon[i] = self._sample_node(self.p_h_data[i])
+        hid_nodes_recon = np.zeros(p_h_data.shape[0])
+        for i in range(p_h_data.shape[0]):
+            hid_nodes_recon[i] = self._sample_node(p_h_data[i])
 
         # test_f.test_sampling(self.hid_nodes_recon, self.num_hidden)
         # Data outer product
-        pos_grad = np.outer(vis_nodes, self.p_h_data)
+        pos_grad = np.outer(vis_nodes, p_h_data)
+        self.p_h_data = np.array(p_h_data)
+        self.hid_nodes_recon = np.array(hid_nodes_recon)
         # test_f.test_outer_prod_data(pos_grad, self.weights)
-        return pos_grad, self.hid_nodes_recon
+        return pos_grad, hid_nodes_recon
 
-    def _neg_gradient(self, k=1):
+    def _neg_gradient(self, hid_recon, k=1):
         """
         Compute the outer product between hidden and visible nodes, which are obtained from reconstructions.
         :param k: Integer corresponding to the number of Gibbs sampling steps
@@ -93,21 +112,25 @@ class RBM:
         :return: Vector with all the visible node activations
         :return: Vector with all the hidden node activations
         """
+        hid_recon = np.array(hid_recon)
+
         # Perform Gibbs sampling
         for step in range(k):
             # Negative gradient: Hidden => Visible (reconstruction of data)
-            p_v = self._probability_visible(self.hid_nodes_recon)
+            p_v = self._probability_visible(hid_recon)
             # Sample
+            vis_nodes_recon = np.zeros(p_v.shape[0])
             for i in range(p_v.shape[0]):
-                self.vis_nodes_recon[i] = self._sample_node(p_v[i])
+                vis_nodes_recon[i] = self._sample_node(p_v[i])
             # test_f.test_sampling(self.vis_nodes_recon, self.num_visible)
 
             # Reconstruct the hidden nodes from visible again
-            p_h = self._probability_hidden(self.vis_nodes_recon)
+            p_h = self._probability_hidden(vis_nodes_recon)
             # Sample from this probability distribution
             for j in range(p_h.shape[0]):
-                self.hid_nodes_recon[j] = self._sample_node(p_h[j])
+                hid_recon[j] = self._sample_node(p_h[j])
             # test_f.test_sampling(self.hid_nodes_recon, self.num_hidden)
+            self.vis_nodes_recon = np.array(vis_nodes_recon)
         return np.outer(p_v, p_h), p_v, p_h
 
     def _compute_model_params(self, vis_nodes, train_size, lr=0.01, k=1):
@@ -121,11 +144,13 @@ class RBM:
         :return: Reconstructed visible nodes are returned, as they are needed to compute the error
         """
         # Compute positive gradient
+        vis_nodes = np.array(vis_nodes)
+
         pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes)
 
         # Iterate k number of times
         # for i in range(k):
-        neg_grad, p_v_recon, p_h_recon = self._neg_gradient(k=k)
+        neg_grad, p_v_recon, p_h_recon = self._neg_gradient(hid_node_recon_data, k=k)
 
         # Compute reconstruction error
         recon = self._cost_cross_entropy(vis_nodes, p_v_recon)
@@ -133,21 +158,13 @@ class RBM:
         # Update
         # Differences here compared to the old code
         # self.gradient = np.average(np.average(lr * (pos_grad - neg_grad))) # Possibly delete
+        # self.bias_vis and self.bias_hid are somehow changed here.
         self.gradient_update += lr * (pos_grad - neg_grad) * (1.0 / train_size)
-        self.bias_hid_update += lr * (self.p_h_data - p_h_recon) * (1.0 / train_size)
-        self.bias_vis_update += lr * (vis_nodes - p_v_recon) * (1.0 / train_size)
+        self.hid_update += lr * (self.p_h_data - p_h_recon) * (1.0 / train_size)
+        self.vis_update += lr * (vis_nodes - p_v_recon) * (1.0 / train_size)
         self.recon_error += np.sum((vis_nodes - self.vis_nodes_recon)**2)
 
         return recon
-
-    @staticmethod
-    def _sample_node(prob):
-        """
-        Obtain unbiased sample of node. Sample from conditional probability. Needed to perform Gibbs sampling step.
-        :param prob: float corresponding with the probability of a node being activated
-        :return: binary number corresponding with the activation of the node
-        """
-        return np.random.binomial(1, prob)  # If you sample binomial once you sample Bernoulli
 
     def _recon_training(self, training_set, lr=0.01, k=1):
         """
@@ -157,6 +174,7 @@ class RBM:
         :param lr: float corresponding to the learning rate of the model
         :param k: integer corresponding to the number of Contrastive Divergence steps
         """
+        training_set = np.array(training_set)
         recon = np.zeros(self.num_visible) # Initialize
         # Loop over all the training vectors
         for i in range(training_set.shape[0]):
@@ -199,8 +217,8 @@ class RBM:
         # Normalize all the parameters by dividing by the number of training samples
         # Check later if division goes well (is every index divided by scalar)
         self.weights += self.gradient_update
-        self.bias_vis += self.bias_vis_update
-        self.bias_hid += self.bias_hid_update
+        self.bias_vis += self.vis_update
+        self.bias_hid += self.hid_update
 
     def train(self, split=0.8, max_iterations=100, lr=0.01, k=1):
         """
@@ -233,21 +251,20 @@ class RBM:
             # Visualize the hidden probability activation and directly save output.
             if epoch % 100 == 0:
                 vis.visualize_hidden_prob_activation(self.all_p_h_data, "Hidden_probability_activation_" + str(epoch))
-                vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient_update, self.bias_vis_update, self.bias_hid_update, "parameter_histogram_" + str(epoch))
+                vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient_update, self.vis_update, self.hid_update, "parameter_histogram_" + str(epoch))
 
-            # print("Epoch: " + str(epoch+1) + "\n")
-            # print("Recon error RMSE: " + str(self.recon_error / train.shape[0]))
-            # print("Average reconstruction cost on training set: " + str(reconstruction_cost_train[epoch]).format("%.5f") + "\n")
+            print("Epoch: " + str(epoch+1) + "\n")
+            print("Recon error RMSE: " + str(self.recon_error / train.shape[0]))
+            print("Average reconstruction cost on training set: " + str(reconstruction_cost_train[epoch]).format("%.5f") + "\n")
             # reconstruction_cost_val[epoch] = self._compute_reconstruction_cost_val(val)
             # print("Average reconstruction cost on validation set: " + str(reconstruction_cost_val[epoch]).format("%.5f") + "\n")
 
             # Update takes place here
             self._update_parameters(train.shape[0])
-            print("hello")
             self.recon_error = 0
             self.gradient_update = 0
-            self.bias_hid_update = 0
-            self.bias_vis_update = 0
+            self.hid_update = 0
+            self.vis_update = 0
             epoch += 1
         # Plot the loss
         print(self.all_p_h_data)
@@ -271,7 +288,7 @@ class RBM:
         cross_entropy = data * np.log(y_n) + (1 - data) * np.log(1 - y_n)
         return -cross_entropy
 
-    def make_prediction(self, sample_data):
+    def make_prediction(self, bias_hid, bias_vis, sample_data):
         """
         Makes prediction of the state of the visible nodes
         :param sample_data: Sample of the class you want to predict. Predict hidden nodes

@@ -12,6 +12,7 @@
 # r._probability_hidden(training_data[0, :])
 import numpy as np
 import sys
+import math
 
 
 def test_probability_hid(probability, nr_nodes):
@@ -99,10 +100,22 @@ def test_outer_prod_data(outer_product, weights):
     """
     if outer_product.shape[0] != weights.shape[0] or outer_product.shape[1] != weights.shape[1]:
         raise ValueError("Dimensions of the outer product for gradient computation is wrong (dimension mismatch)")
-
-
     # Maybe incorporate an outer product that is computed by hand
-    # If dataset stays the same then these number should also stay the same.
+    # If data set stays the same then these number should also stay the same.
 
 
+def test_cross_entropy(error_arr, prob_size):
+    """
+    Test if the cross entropy was computed correctly
+    :param error_arr: numpy array containing the cross entropy of the model
+    :param prob_size:
+    :return:
+    """
+    for error in error_arr:
+        if math.isnan(error):
+            raise ValueError("Something went wrong during cross entropy computation. Answer should not be NaN")
+        if math.isinf(error):
+            raise ValueError("Something went wrong during cross entropy computation. Answer should not be Inf")
 
+    if error_arr.shape[0] != prob_size:
+        raise ValueError("Something went wrong during cross entropy computation. Error array is too large")

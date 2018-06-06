@@ -106,13 +106,17 @@ def model_param_visualization(weights, v_bias, hid_bias, dweights, dv_bias, dhid
     fig.savefig(cwd + dir_name + name_out + ".png")
     plt.close()
 
-def loss_plots(epoch, loss_train, loss_val):
+
+def loss_plots(epoch, loss_train, loss_val, out_fn):
     """
     Visualize the loss computed using the cross entropy on the train, validation and test set
     :param epoch: list with the number of iterations
     :param loss_train: numpy array with average loss of training set computed per iteration
     :param loss_val: numpy array with average loss of validation set computed per iteration
+    :param out_fn: string corresponding with name of the model
     """
+    cwd = os.getcwd()
+    out_dir = "./Loss_plot/"
     plt.figure()
     plt.plot(epoch, loss_train, "r-")
     plt.plot(epoch, loss_val, "b-")
@@ -122,4 +126,9 @@ def loss_plots(epoch, loss_train, loss_val):
     red_patch = mpatches.Patch(color='red', label='Training data')
     blue_patch = mpatches.Patch(color='blue', label='Validation data')
     plt.legend(handles=[red_patch, blue_patch])
-    plt.show()
+    # plt.show()
+    # Check if folder already exists
+    if not os.path.exists(cwd + out_dir):
+        os.mkdir(out_dir)
+
+    plt.savefig(cwd + out_dir + "/" + out_fn + ".png")

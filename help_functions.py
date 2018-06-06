@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import pandas as pd
+import glob
 
 
 def read_data(filename):
@@ -14,38 +15,42 @@ def read_data(filename):
 
     # Check if file exists
     if not os.path.isfile(cwd + filename):
-        print("File does not exist")
+        raise FileNotFoundError("File does not exist/File not found")
 
     # Read file
     if filename.find(".csv") != -1:
-        return pd.DataFrame.as_matrix(pd.read_csv(cwd + filename, delimiter=','))
+        # Still need to test this function!!!
+        names = glob.glob("*.csv")
+        data = np.empty((1,1))
+        for name in names:
+            data = pd.DataFrame.as_matrix(pd.read_csv(cwd + name, delimiter=','))
+        return data
     else:
         return np.loadtxt(cwd + filename)
 
 
-def squared_recon_error(visible_nodes, recon_visible_nodes):
+def sum_squared_recon_error(visible_nodes, recon_visible_nodes):
     """
     Compute the reconstruction error between the original data and the predictions, by computing the squared error
     Easy way out is to just compute the root mean squared error
-    :param visible_nodes: Vector containing the original data
-    :param recon_visible
-    :return: error
+    :param visible_nodes: numpy array that contains the original data
+    :param recon_visible: numpy array that contains the reconstruction of the data
+    :return: float corresponding with the sum of squared error
     """
     # Simply take the squared error between the original input data and the reconstructed data
     norm = np.linalg.norm(visible_nodes - recon_visible_nodes)
-    return np.square(norm)
+    return np.sqrt(np.square(norm))
 
 
-def cross_entropy_error(visible_nodes, recon_visible_nodes):
+def cross_entropy(data, p_n):
     """
-    Compute the reconstruction error using the original data and the predictions, using the cross-entropy
-    Hinton's practical guide to RBM noted that this is most appropriate for the restricted Boltzmann machine combined
-    with the contrastive divergence algorithm.
-    :param visible_nodes: vector containing the visible nodes
-    :param recon_visible_nodes: vector containing the reconstruction of the visible nodes
-    :return:
+    Compute cross-entropy to keep track of training of the model.
+    :param data: numpy array containing the input data (visible nodes)
+    :param p_n: numpy array containing the reconstruction probability of visible nodes
+    :return: numpy array containing the cross entropy for all the visible nodes.
     """
-    return -np.dot(visible_nodes, np.log(recon_visible_nodes))
+    cross_entropy = data * np.log(p_n) + (1 - data) * np.log(1 - p_n)
+    return -cross_entropy
 
 
 def sigmoid(x):

@@ -2,14 +2,16 @@ import numpy as np
 import os
 import pandas as pd
 import glob
+import h5py
 
 
-def read_data(filename):
+def read_data(filename, heading=None):
     """
     Reads data and converts to matrix.
     Incorporate the .glob in this function, in order to read in large amounts of data
     :param filename: String containing filename
-    :return: numpy array containing input data
+    :param heading: Boolean describing if there is a heading in the dataset
+    :return: numpy array containing input data. Default behavior is None.
     """
     cwd = os.getcwd()
 
@@ -23,7 +25,7 @@ def read_data(filename):
         names = glob.glob("*.csv")
         data = np.empty((1,1))
         for name in names:
-            data = pd.DataFrame.as_matrix(pd.read_csv(cwd + name, delimiter=','))
+            data = pd.DataFrame.as_matrix(pd.read_csv(cwd + name, header=heading))
         return data
     else:
         return np.loadtxt(cwd + filename)
@@ -55,3 +57,13 @@ def cross_entropy(data, p_n):
 
 def sigmoid(x):
     return 1.0 / (1 + np.exp(-x))
+
+
+def write_h5py(array, filename):
+    """
+    Function that writes array to h5py files
+    :param array: numpy array that needs to be saved in h5py file
+    :param filename: string corresponding to the file name
+    """
+    with h5py.File(filename, "w") as f:
+        f.create_dataset("image", data=array, dtype=array.dtype)

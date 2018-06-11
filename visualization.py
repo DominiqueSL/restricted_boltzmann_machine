@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
@@ -22,7 +24,7 @@ def visualize_hidden_prob_activation(hid_probability, out_name):
     prominent black and white areas.
     The hidden neurons are given along the columns.
     The samples are shown given along the rows.
-    White pixels represent a probability of 0, while black pixels represent a probability of 1.
+    White pixels represent a probability of 1, while black pixels represent a probability of 0.
     :param hid_probability: numpy array containing the probability of the hidden nodes
                             Note that this cannot be of a single sample only. It must be a 2D array in order to be
                             converted to an image.
@@ -30,11 +32,11 @@ def visualize_hidden_prob_activation(hid_probability, out_name):
     """
     image = Image.fromarray(np.multiply(hid_probability, 255).astype(np.uint8))
     cwd = os.getcwd()
-    dir_name = "./Probability_activation//"
+    dir_name = "./Probability_activation/"
     if not os.path.exists(cwd + dir_name):
         os.mkdir(dir_name)
 
-    image.save(cwd + dir_name + "/" + out_name + ".png")
+    image.save(cwd + dir_name + out_name + ".png")
 
 
 def visualize_neg_samples(reconstruction, image=False):
@@ -66,6 +68,7 @@ def model_param_visualization(weights, v_bias, hid_bias, dweights, dv_bias, dhid
     :param name_out: string corresponding with the name of the output files
     """
     # Fixing random state for reproducibility
+    # Still need to fix up the axis when saving the subplot
     np.random.seed(19680801)
     fig = plt.figure()
 
@@ -99,7 +102,7 @@ def model_param_visualization(weights, v_bias, hid_bias, dweights, dv_bias, dhid
 
     # Save the file
     cwd = os.getcwd()
-    dir_name = "./Model_param_histograms//"
+    dir_name = "./Model_param_histograms/"
     if not os.path.exists(cwd + dir_name):
         os.mkdir(dir_name)
 
@@ -131,4 +134,4 @@ def loss_plots(epoch, loss_train, loss_val, out_fn):
     if not os.path.exists(cwd + out_dir):
         os.mkdir(out_dir)
 
-    plt.savefig(cwd + out_dir + "/" + out_fn + ".png")
+    plt.savefig(cwd + out_dir + out_fn + ".png")

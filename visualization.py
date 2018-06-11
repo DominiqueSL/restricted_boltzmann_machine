@@ -31,12 +31,11 @@ def visualize_hidden_prob_activation(hid_probability, out_name):
     :param out_name: string corresponding to the name of the output image file
     """
     image = Image.fromarray(np.multiply(hid_probability, 255).astype(np.uint8))
-    cwd = os.getcwd()
     dir_name = "./Probability_activation/"
-    if not os.path.exists(cwd + dir_name):
+    if not os.path.exists(dir_name):
         os.mkdir(dir_name)
 
-    image.save(cwd + dir_name + out_name + ".png")
+    image.save(dir_name + out_name + ".png")
 
 
 def visualize_neg_samples(reconstruction, image=False):
@@ -103,10 +102,10 @@ def model_param_visualization(weights, v_bias, hid_bias, dweights, dv_bias, dhid
     # Save the file
     cwd = os.getcwd()
     dir_name = "./Model_param_histograms/"
-    if not os.path.exists(cwd + dir_name):
+    if not os.path.exists(dir_name):
         os.mkdir(dir_name)
 
-    fig.savefig(cwd + dir_name + name_out + ".png")
+    fig.savefig(dir_name + name_out + ".png")
     plt.close()
 
 
@@ -118,11 +117,10 @@ def loss_plots(epoch, loss_train, loss_val, out_fn):
     :param loss_val: numpy array with average loss of validation set computed per iteration
     :param out_fn: string corresponding with name of the model
     """
-    cwd = os.getcwd()
     out_dir = "./Loss_plot/"
     plt.figure()
-    plt.plot(epoch, loss_train, "r-")
-    plt.plot(epoch, loss_val, "b-")
+    plt.plot(epoch, loss_train, "r.-")
+    plt.plot(epoch, loss_val, "b.-")
 
     plt.xlabel("Iterations")
     plt.ylabel("Reconstruction error")
@@ -131,7 +129,7 @@ def loss_plots(epoch, loss_train, loss_val, out_fn):
     plt.legend(handles=[red_patch, blue_patch])
     # plt.show()
     # Check if folder already exists
-    if not os.path.exists(cwd + out_dir):
+    if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
-    plt.savefig(cwd + out_dir + out_fn + ".png")
+    plt.savefig(out_dir + out_fn + ".png")

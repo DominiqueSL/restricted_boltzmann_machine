@@ -2,13 +2,18 @@ import h5py
 import glob
 import pandas as pd
 import os
+import numpy as np
 
 # Import large amount of data and write it to an h5py file for easy loading to the model
 
 
-def convert_to_h5py(filepath, heading=None, delimiter=","):
+def convert_to_h5py(filepath, folder, filename, heading=None, delimiter=","):
     """
     Convert files in the given file path to a full h5py file.
+    :param filepath: string with path to the files to be imported and converted to h5py
+    :param filename: string with the name of the output file
+    :param heading: boolean corresponding with if there is a header in the file or not
+    :param delimiter: string corresponding with the delimiter in the file to be converted
     """
     # Function still needs to be tested
     # Read file
@@ -20,21 +25,24 @@ def convert_to_h5py(filepath, heading=None, delimiter=","):
         nr_cols = len(file.columns)
 
         # Initialize the dataset
-        dset = h5py.File("brain_data_set", "x")
-        fset = dset.create_dataset("ints", (100,), dtype='i8', maxshape=(None, nr_cols))
-        with h5py.File(fset, 'a') as hf:
+        with h5py.File(filepath + filename + ".hdf5", 'a') as hf:
             # Start reading all the files
-            names = glob.glob("*.csv")
+            names = glob.glob(filepath + folder + "/" + "*.csv")
             # Append the dataset together using h5py
-            for name in names:
-                data = pd.DataFrame.as_matrix(pd.read_csv(filepath + name, header=heading)) # training matrix
-                hf["dataset"].resize((hf["dataset"].shape[0] + data.shape[0]), axis=0)
-                hf["dataset"][-data.shape[0]:] = data
-        return dset
+            for index, name in enumerate(names, start=1):
+                if index == 1:
+                    data = pd.DataFrame.as_matrix(pd.read_csv(name, header=heading)) # training matrix
+                else:
+                    data = np.concatenate((data, pd.DataFrame.as_matrix(pd.read_csv(name, header=heading)))) # training matrix
+            hf.create_dataset("dataset", data=data, dtype=data.dtype)
+
     else:
         raise NotImplementedError("Other filetypes are not yet supported")
 
 
-filpath = "./binary/"
-convert_to_h5py(filepath=filpath)
-print("Success :D")
+filepath = "./binary/"
+for _, dirnames, _ in os.walk(filepath):
+    for index, folder in enumerate(dirnames, start=1):
+        convert_to_h5py(filepath, folder,  "brain_data_set_" + str(index))
+
+print("Success")

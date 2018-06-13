@@ -1,8 +1,8 @@
 import numpy as np
 import os
 import pandas as pd
-import glob
 import h5py
+import gzip
 
 
 def read_data(filename, heading=None):
@@ -59,11 +59,35 @@ def sigmoid(x):
     return 1.0 / (1 + np.exp(-x))
 
 
+def load_hdf5(infile):
+    """
+    Function that loads h5py files
+    :param infile: string with the filename that is to be loaded
+    :return: numpy array with the data in the h5 file.
+    """
+    with h5py.File(infile, "r") as f:  #"with" close the file after its nested commands
+        return f["dataset"][()]
+
+
 def write_h5py(array, filename):
     """
-    Function that writes array to h5py files
-    :param array: numpy array that needs to be saved in h5py file
-    :param filename: string corresponding to the file name
+    Function that writes array to an hd5 output file
+    :param array: numpy array corresponding with the array that has to be written to hdf5 file
+    :param filename: string corresponding with the name of the output file
     """
-    with h5py.File(filename, "w") as f:
-        f.create_dataset("image", data=array, dtype=array.dtype)
+    with h5py.File(filename + ".hdf5", "a") as f:
+        f.create_dataset("dataset", data=array, dtype=array.dtype)
+
+
+def extract_data(filename, num_images):
+    """Extract the images into a 4D tensor [image index, y, x, channels].
+    Values are rescaled from [0, 255] down to [-0.5, 0.5].
+    """
+    print('Extracting', filename)
+    IMAGE_SIZE = 28
+    with gzip.open(filename, 'rb') as bytestream:
+        bytestream.read(16)
+        buf = bytestream.read(IMAGE_SIZE * IMAGE_SIZE * num_images)
+        data = np.frombuffer(buf, dtype=np.uint8)
+        data = data.reshape(num_images, IMAGE_SIZE*IMAGE_SIZE)
+    return np.round((data / 255), 0)

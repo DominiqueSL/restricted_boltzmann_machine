@@ -11,7 +11,7 @@ def visualize_filters(weights):
     """
     Plot the weights (filters) in order to keep track of the training progress of the RBM
     Plotting the weights!
-    :param weights: Matrix of the weights learned by the model
+    :param weights: Matrix of the weights learnt by the model
     """
     plt.imshow(weights)
     plt.show()
@@ -34,7 +34,6 @@ def visualize_hidden_prob_activation(hid_probability, out_name):
     dir_name = "./Probability_activation/"
     if not os.path.exists(dir_name):
         os.mkdir(dir_name)
-
     image.save(dir_name + out_name + ".png")
 
 
@@ -131,5 +130,13 @@ def loss_plots(epoch, loss_train, loss_val, out_fn):
     # Check if folder already exists
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
-
     plt.savefig(out_dir + out_fn + ".png")
+
+
+def cluster_result(weights, nr_clusters):
+    """
+    Function that visualizes and clusters feature results
+    :param weights: numpy array corresponding with feature matrix that is learnt
+    :param nr_clusters: int corresponding with the number of clusters the final result should be in
+    :return:
+    """

@@ -99,7 +99,6 @@ def model_param_visualization(weights, v_bias, hid_bias, dweights, dv_bias, dhid
     ax_6.set_title('mm = %.6g' % np.mean(np.fabs(dhid_bias)))
 
     # Save the file
-    cwd = os.getcwd()
     dir_name = "./Model_param_histograms/"
     if not os.path.exists(dir_name):
         os.mkdir(dir_name)

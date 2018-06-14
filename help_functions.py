@@ -71,11 +71,11 @@ def load_hdf5(infile):
 
 def write_h5py(array, filename):
     """
-    Function that writes array to an hd5 output file
+    Function that writes array to an hdf5 output file
     :param array: numpy array corresponding with the array that has to be written to hdf5 file
     :param filename: string corresponding with the name of the output file
     """
-    with h5py.File(filename + ".hdf5", "a") as f:
+    with h5py.File(filename + ".hdf5", "w") as f:
         f.create_dataset("dataset", data=array, dtype=array.dtype)
 
 

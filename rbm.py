@@ -18,11 +18,9 @@ class RBM:
         self.input_data = training_data
         self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
         self.bias_hid = np.zeros(self.num_hidden)
-        # self.bias_vis = self._bias_visible_init(training_data)
-        self.bias_vis = np.zeros(self.num_visible) # in case everything is 1 or zero
+        self.bias_vis = self._bias_visible_init(training_data)
 
-    @staticmethod
-    def _bias_visible_init(visible_units):
+    def _bias_visible_init(self, visible_units):
         """
         Compute the initial bias of the visible units
         :param visible_units: The activations of the visible units
@@ -30,7 +28,13 @@ class RBM:
         """
         proportion = np.divide(np.sum(visible_units, 0), visible_units.shape[0])
         denominator = np.subtract(np.ones(proportion.shape), proportion)
-        return np.log(np.divide(proportion, denominator))
+        initialize = np.log(np.divide(proportion, denominator))
+
+        # Check if there is no infinity in the computation
+        if np.sum(np.isinf(initialize)) == 0:
+            return initialize
+        else:  # Bigger than zero means there is an infinity present
+            return np.zeros(self.num_visible)
 
     def _probability_hidden(self, visible_nodes):
         """
@@ -74,15 +78,14 @@ class RBM:
         # Positive gradient: Visible => Hidden
         self.p_h_data = self._probability_hidden(vis_nodes)
         # Sample from this probability distribution
-        self.hid_nodes_data = self._sample_nodes(self.p_h_data)
+        self.hidden_recon = self._sample_nodes(self.p_h_data)
         # test_f.test_sampling(self.hid_nodes_data, self.num_hidden)
         # Data outer product
         pos_grad = np.outer(vis_nodes, self.p_h_data)
-        # Fix this double assignment later
         # test_f.test_outer_prod_data(pos_grad, self.weights)
-        return pos_grad, self.hid_nodes_data
+        return pos_grad, self.hidden_recon
 
-    def _neg_gradient(self, hid_recon, k=1):
+    def _neg_gradient(self, k=1):
         """
         Compute the outer product between hidden and visible nodes, which are obtained from reconstructions.
         :param k: Integer corresponding to the number of Gibbs sampling steps
@@ -90,16 +93,13 @@ class RBM:
         :return: Vector with all the visible node activations
         :return: Vector with all the hidden node activations
         """
-        hid_recon = np.array(hid_recon) # Check if removing this still produces the same output
-
         # Perform Gibbs sampling
         for step in range(k):
             # Negative gradient: Hidden => Visible (reconstruction of data)
-            p_v = self._probability_visible(hid_recon)
+            p_v = self._probability_visible(self.hidden_recon)
             # Sample
             self.vis_nodes_recon = self._sample_nodes(p_v)
             # test_f.test_sampling(self.vis_nodes_recon, self.num_visible)
-
             # Reconstruct the hidden nodes from visible again
             p_h = self._probability_hidden(self.vis_nodes_recon)
             # Sample from this probability distribution
@@ -118,15 +118,11 @@ class RBM:
         :return: Reconstructed visible nodes are returned, as they are needed to compute the error
         """
         # Compute positive gradient
-        vis_nodes = np.array(vis_nodes)
         pos_grad, hid_node_recon_data = self._pos_gradient(vis_nodes)
-
         # Use k number of steps Gibbs sampling
-        neg_grad, p_v_recon, p_h_recon = self._neg_gradient(hid_node_recon_data, k=k)
-
+        neg_grad, p_v_recon, p_h_recon = self._neg_gradient(k=k)
         # Compute reconstruction error
         recon = hf.cross_entropy(vis_nodes, p_v_recon)
-
         # Update
         self.gradient_update += (lr * (pos_grad - neg_grad)) / train_size
         self.hid_update += (lr * (self.p_h_data - p_h_recon)) / train_size
@@ -145,11 +141,11 @@ class RBM:
         recon_rmse = 0
         # Loop over all the training vectors
         for i in range(training_set.shape[0]):
-            # This can possibly be further vectorized
-            # Do contrastive divergence algorithm
+            # Reconstruct error values
             recon += self._compute_model_params(training_set[i, :], training_set.shape[0], lr=lr, k=k)
             recon_rmse += hf.sum_squared_recon_error(training_set[i, :], self.vis_nodes_recon)
             self.all_p_h_data[i, :] = self.p_h_data # Needed for the probability images
+        # Normalize by dividing by training set size and return values
         return np.average(recon / training_set.shape[0]), recon_rmse / training_set.shape[0]
 
     def make_prediction(self, sample_data):
@@ -167,8 +163,6 @@ class RBM:
         # Sample back to visible again
         v = self._sample_nodes(p_vis)
         return p_vis, v, h
-        # print(h)
-        # print(v)
 
     def _compute_reconstruction_cost_val(self, data_set, test=False):
         """
@@ -179,27 +173,25 @@ class RBM:
         :param test: boolean to indicate if it is test set or not
         :return: Float corresponding to the reconstruction cost of the dataset
         """
-        # Initialize the reconstruction cost
+        # Initialize the reconstruction cost and hidden node reconstructions
         reconstruction_cost = 0
         sum_recon_cost = 0
-        self.hid_nodes_recon = np.empty((data_set.shape[0], self.num_hidden))
-        # Loop over all samples again, with the learnt weights and biases
-        # if test:
-            # hid_nodes_recon = np.empty((data_set.shape[0], self.num_hidden))
-        for m in range(data_set.shape[0]):
-            p_v, v, h = self.make_prediction(data_set[m, :])
-            self.hid_nodes_recon[m, :] = h
-            reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
-            sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
-        # hf.write_h5py(self.hid_nodes_recon, "hidden_node_reconstructions_")
-        # else:
-        #     for m in range(data_set.shape[0]):
-        #         p_v, v, _ = self.make_prediction(data_set[m, :])
-        #         reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
-        #         sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
-        #         # Compute the reconstruction cost, sum over all the training samples
-        #     # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
-
+        if not test:
+            # Loop over all samples again, with the learnt weights and biases
+            for m in range(data_set.shape[0]):
+                p_v, v, h = self.make_prediction(data_set[m, :])
+                reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
+                sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
+                # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
+        else:
+            self.hid_nodes_recon = np.empty((data_set.shape[0], self.num_hidden))
+            # Loop over all samples again, with the learnt weights and biases
+            for m in range(data_set.shape[0]):
+                p_v, v, h = self.make_prediction(data_set[m, :])
+                self.hid_nodes_recon[m, :] = h  # Assign hidden node in matrix
+                reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
+                sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
+                # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
         # Average out the reconstruction cost, by averaging it over all the nodes etc.
         reconstruction_cost_tot = np.average(reconstruction_cost / data_set.shape[0])
         sum_recon_cost_tot = sum_recon_cost / data_set.shape[0]
@@ -210,7 +202,6 @@ class RBM:
         Update all the model parameters (weights, biases)
         """
         # Normalize all the parameters by dividing by the number of training samples
-        # Check later if division goes well (is every index divided by scalar)
         self.weights += self.gradient_update
         self.bias_vis += self.vis_update
         self.bias_hid += self.hid_update
@@ -224,19 +215,19 @@ class RBM:
         self.hid_update = 0
         self.vis_update = 0
         self.all_p_h_data = np.zeros((train_size, self.num_hidden))
-        # self.hid_nodes_recon = np.zeros((train_size, self.num_hidden))
 
-    def train(self, outfile, split=0.8, max_iterations=100, lr=0.01, k=1):
+    def train(self, outfile, split=0.8, max_iterations=100, lr=0.01, k=1, visualize=False):
         """
         Train the restricted Boltzmann machine (RBM)
-        :param batchsize: Integer corresponding with the batch size
-                          Use batchsize training to speed up algorithm
         :param outfile: string corresponding with the output file name
         :param split: Float corresponding with the split into train and testing set
         :param max_iterations: Integer corresponding to the maximum number of iterations over one training batch
         :param lr: Float corresponding to the learning rate of the model
         :param k: Integer corresponding with the number of contrastive divergence iterations
+        :param visualize: Boolean corresponding with the need to visualize training progress in histograms and
+                          probability maps.
         """
+        # Initialize
         reconstruction_cost_train = []
         reconstruction_cost_val = []
         rmse_train = []
@@ -257,43 +248,35 @@ class RBM:
             val = train_set[train_split:, :]
             # Initialize model parameters
             self._initialize_model_param(train.shape[0])
-            # Perform batch-wise training
-            # Update parameters and compute reconstructions
-            # batchstart = 0
-            # for batch in range(batchsize, train.shape[0]-batchsize, batchsize):
-            #     train_cost, train_rmse = self._recon_training(train[batchstart:batch, :], lr=lr, k=k)
-            #     reconstruction_cost_train[epoch] += train_cost / train.shape[0]
-            #     rmse_train[epoch] += train_rmse / train.shape[0]
             cost_train, train_rmse = self._recon_training(train, lr=lr, k=k)
             reconstruction_cost_train.append(cost_train)
             rmse_train.append(train_rmse)
             # Update parameters
             self._update_parameters()
             # Visualize the hidden probability activation and directly save output.
-            # if epoch % 100 == 0:
-            #     vis.visualize_hidden_prob_activation(self.all_p_h_data, "Hidden_probability_activation_"
-            #                                          + outfile + str(epoch))
-            #     vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient_update, self.vis_update, self.hid_update, "parameter_histogram_" + outfile + str(epoch))
-
+            if visualize:
+                if epoch % 100 == 0:
+                    vis.visualize_hidden_prob_activation(self.all_p_h_data, "Hidden_probability_activation_"
+                                                         + outfile + str(epoch))
+                    vis.model_param_visualization(self.weights, self.bias_vis, self.bias_hid, self.gradient_update,
+                                                  self.vis_update, self.hid_update, "parameter_histogram_" + outfile
+                                                  + str(epoch))
             # Print output
-            # print("Epoch: " + str(epoch+1) + "\n")
-            # print("RMSE (train): " + str(rmse_train[epoch]))
-            # print("Average cross-entropy (train): " + str(reconstruction_cost_train[epoch]).format("%.5g") + "\n")
+            print("Epoch: " + str(epoch+1) + "\n")
+            print("RMSE (train): " + str(rmse_train[epoch]))
+            print("Average cross-entropy (train): " + str(reconstruction_cost_train[epoch]).format("%.5g") + "\n")
 
-            # incorporate different hidden nodes here???
             recon_val, val_rmse = self._compute_reconstruction_cost_val(val)
             reconstruction_cost_val.append(recon_val)
             rmse_val.append(val_rmse)
-            # print("Average cross-entropy (validation): " + str(reconstruction_cost_val[epoch]).format("%.5g") + "\n")
-            # print("RMSE (validation): " + str(rmse_val[epoch]) + " \n")
+            print("Average cross-entropy (validation): " + str(reconstruction_cost_val[epoch]).format("%.5g") + "\n")
+            print("RMSE (validation): " + str(rmse_val[epoch]) + " \n")
             epoch += 1
         # Plot the loss
         vis.loss_plots(range(epoch), reconstruction_cost_train, reconstruction_cost_val, "loss_plot_neural_spike_")
         vis.loss_plots(range(epoch), rmse_train, rmse_val, " loss_plot_rmse_neural_spike_")
-        # Save weights and biases
-        self._save_parameters(outfile)
 
-    def _save_parameters(self, output_name):
+    def save_parameters(self, output_name):
         """
         Save the parameters of the final model as well as final results
         :param output_name: string corresponding with the name of the output file

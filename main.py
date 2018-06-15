@@ -2,6 +2,7 @@
 import rbm
 import help_functions as hf
 import sys
+import pandas as pd
 # Main program to train Restricted Boltzmann Machine
 
 
@@ -16,16 +17,18 @@ def main(dirname, num_hidden):
     # Select a range of number of hidden nodes, which needs to be optimized
     # num_hidden = np.array(range(100, 50, 200))
 
-    filepath = "./binary/"
-    # filepath = "./"
-    training_data = hf.load_hdf5(filepath + dirname + "/brain_data_set.hdf5")
-    # train_set_images = hf.load_hdf5(filepath + dirname + ".hdf5")
+    # filepath = "./binary/"
+    filepath = "./"
+    # training_data = hf.load_hdf5(filepath + dirname + "/brain_data_set.hdf5")
+    # training_data = pd.DataFrame(pd.read_csv("./boltzmann_machine_toy_data.csv", ',')).as_matrix()
+    training_data = hf.load_hdf5(filepath + dirname + ".hdf5")
     print("Finished loading data. Start training")
     r = rbm.RBM(training_data=training_data, num_visible=training_data.shape[1], num_hidden=int(num_hidden))
 
     # r = rbm.RBM(training_data=training_data, num_visible=training_data.shape[1], num_hidden=int(num_hidden))
     r.train(outfile=dirname, split=DATA_SPLIT, max_iterations=1000, lr=0.1, k=1, visualize=False)
-    r.test(split=DATA_SPLIT)
+    # r.test(split=DATA_SPLIT)
+    r.final_hid_recon()
     r.save_parameters(dirname)  # Save output
 
 
@@ -34,4 +37,4 @@ if __name__ == '__main__':
     # filename = sys.argv[1]
     # num_hidden = sys.argv[2]
     # main(filename, num_hidden)
-    main("", 100) # Local run
+    main("mnist_compress", 100)  # Local run

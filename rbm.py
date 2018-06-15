@@ -19,6 +19,7 @@ class RBM:
         self.weights = np.random.normal(0.0, 0.01, (self.num_visible, self.num_hidden))
         self.bias_hid = np.zeros(self.num_hidden)
         self.bias_vis = self._bias_visible_init(training_data)
+        self.hid_recon = np.zeros((self.input_data.shape[0], self.num_hidden))
 
     def _bias_visible_init(self, visible_units):
         """
@@ -137,7 +138,7 @@ class RBM:
         :param lr: float corresponding to the learning rate of the model
         :param k: integer corresponding to the number of Contrastive Divergence steps
         """
-        recon = np.zeros(self.num_visible) # Initialize
+        recon = np.zeros(self.num_visible)  # Initialize
         recon_rmse = 0
         # Loop over all the training vectors
         for i in range(training_set.shape[0]):
@@ -164,6 +165,39 @@ class RBM:
         v = self._sample_nodes(p_vis)
         return p_vis, v, h
 
+    # def _compute_reconstruction_cost_val(self, data_set, test=False):
+    #     """
+    #     Function that computes the full reconstruction error
+    #     Error is computed using the cross-entropy, as stated in Hinton's Practical Guide to training Boltzmann  machines
+    #     => Most appropriate for Contrastive Divergence
+    #     :param data_set: numpy array with the dataset on which we have to compute the error
+    #     :param test: boolean to indicate if it is test set or not
+    #     :return: Float corresponding to the reconstruction cost of the dataset
+    #     """
+    #     # Initialize the reconstruction cost and hidden node reconstructions
+    #     reconstruction_cost = 0
+    #     sum_recon_cost = 0
+    #     if not test:
+    #         # Loop over all samples again, with the learnt weights and biases
+    #         for m in range(data_set.shape[0]):
+    #             p_v, v, h = self.make_prediction(data_set[m, :])
+    #             reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
+    #             sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
+    #             # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
+    #     else:
+    #         self.hid_nodes_recon = np.empty((data_set.shape[0], self.num_hidden))
+    #         # Loop over all samples again, with the learnt weights and biases
+    #         for m in range(data_set.shape[0]):
+    #             p_v, v, h = self.make_prediction(data_set[m, :])
+    #             self.hid_nodes_recon[m, :] = h  # Assign hidden node in matrix
+    #             reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
+    #             sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
+    #             # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
+    #     # Average out the reconstruction cost, by averaging it over all the nodes etc.
+    #     reconstruction_cost_tot = np.average(reconstruction_cost / data_set.shape[0])
+    #     sum_recon_cost_tot = sum_recon_cost / data_set.shape[0]
+    #     return reconstruction_cost_tot, sum_recon_cost_tot
+
     def _compute_reconstruction_cost_val(self, data_set, test=False):
         """
         Function that computes the full reconstruction error
@@ -176,22 +210,12 @@ class RBM:
         # Initialize the reconstruction cost and hidden node reconstructions
         reconstruction_cost = 0
         sum_recon_cost = 0
-        if not test:
-            # Loop over all samples again, with the learnt weights and biases
-            for m in range(data_set.shape[0]):
-                p_v, v, h = self.make_prediction(data_set[m, :])
-                reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
-                sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
-                # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
-        else:
-            self.hid_nodes_recon = np.empty((data_set.shape[0], self.num_hidden))
-            # Loop over all samples again, with the learnt weights and biases
-            for m in range(data_set.shape[0]):
-                p_v, v, h = self.make_prediction(data_set[m, :])
-                self.hid_nodes_recon[m, :] = h  # Assign hidden node in matrix
-                reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
-                sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
-                # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
+        # Loop over all samples again, with the learnt weights and biases
+        for m in range(data_set.shape[0]):
+            p_v, v, h = self.make_prediction(data_set[m, :])
+            reconstruction_cost += hf.cross_entropy(data_set[m, :], p_v)
+            sum_recon_cost += hf.sum_squared_recon_error(data_set[m, :], v)
+            # test_f.test_cross_entropy(reconstruction_cost, p_v.shape[0])
         # Average out the reconstruction cost, by averaging it over all the nodes etc.
         reconstruction_cost_tot = np.average(reconstruction_cost / data_set.shape[0])
         sum_recon_cost_tot = sum_recon_cost / data_set.shape[0]
@@ -273,8 +297,8 @@ class RBM:
             print("RMSE (validation): " + str(rmse_val[epoch]) + " \n")
             epoch += 1
         # Plot the loss
-        vis.loss_plots(range(epoch), reconstruction_cost_train, reconstruction_cost_val, "loss_plot_neural_spike_")
-        vis.loss_plots(range(epoch), rmse_train, rmse_val, " loss_plot_rmse_neural_spike_")
+        vis.loss_plots(range(epoch), reconstruction_cost_train, reconstruction_cost_val, "loss_plot_" + outfile)
+        vis.loss_plots(range(epoch), rmse_train, rmse_val, " loss_plot_rmse_neural_" + outfile)
 
     def save_parameters(self, output_name):
         """
@@ -287,7 +311,7 @@ class RBM:
         hf.write_h5py(self.weights, filename=dirname + "final_weights_" + output_name)
         hf.write_h5py(self.bias_hid, filename=dirname + "final_vis_bias_" + output_name)
         hf.write_h5py(self.bias_vis, filename=dirname + "final_hid_bias_" + output_name)
-        hf.write_h5py(self.hid_nodes_recon, dirname + "hidden_node_reconstructions_" + output_name)
+        hf.write_h5py(self.hid_recon, dirname + "hidden_node_reconstructions_" + output_name)
 
     def test(self, split):
         """
@@ -299,3 +323,12 @@ class RBM:
         recon_test, recon_rmse = self._compute_reconstruction_cost_val(test_set, test=True)
         print("Error on test set: " + str(recon_test) + "\n")
         print("RMSE on test set: " + str(recon_rmse))
+
+    def final_hid_recon(self):
+        """
+        Function that makes final hidden reconstructions based on what is learnt
+        :param dataset: numpy array corresponding to the full dataset
+        """
+        for m in range(self.input_data.shape[0]):
+            p_v, v, h = self.make_prediction(self.input_data[m, :])
+            self.hid_recon[m, :] = h  # Assign hidden node to the reconstructions
